@@ -2,10 +2,6 @@
 
 set -e
 
-# =========================================================
-# JUKEBOX SERVER INSTALLER
-# =========================================================
-
 REPO="https://github.com/solisjeffrey7/jukebox.git"
 APP_DIR="$HOME/jukebox"
 KARAOKE_DIR="$HOME/storage/shared/KARAOKE"
@@ -21,107 +17,82 @@ echo
 # =========================================================
 
 if [ -z "$PREFIX" ] || [ ! -d "$PREFIX" ]; then
-    echo "ERROR: This installer is intended for Termux."
+    echo "ERROR: This installer is for Termux only."
     exit 1
 fi
 
 # =========================================================
-# INSTALL REQUIRED PACKAGES
+# INSTALL PACKAGES
 # =========================================================
 
-echo "[1/5] Installing required packages..."
+echo "[1/4] Installing Python and Git..."
 
 pkg update -y
 pkg install -y python git
 
 echo
-echo "Required packages are ready."
+echo "Python and Git are ready."
 echo
 
 # =========================================================
-# CHECK TERMUX STORAGE
+# CHECK STORAGE
 # =========================================================
 
-echo "[2/5] Checking Termux storage..."
+echo "[2/4] Checking Android storage..."
 
-if [ -d "$HOME/storage/shared" ]; then
-
-    echo "Storage access already configured."
-
-else
-
-    echo "Storage access not configured."
-    echo "Requesting Android storage permission..."
+if [ ! -d "$HOME/storage/shared" ]; then
     echo
-
-    termux-setup-storage
-
+    echo "ERROR: Android storage is not available."
     echo
-    echo "Waiting for storage setup..."
-    sleep 3
-
-    if [ ! -d "$HOME/storage/shared" ]; then
-        echo
-        echo "ERROR: Termux storage is not available."
-        echo
-        echo "Please allow storage permission and run the installer again."
-        exit 1
-    fi
-
+    echo "Please run this ONCE manually:"
+    echo
+    echo "termux-setup-storage"
+    echo
+    echo "Then run the installer again."
+    exit 1
 fi
 
-echo
-echo "Storage is ready."
+echo "Storage: OK"
 echo
 
 # =========================================================
-# DOWNLOAD / UPDATE JUKEBOX
+# DOWNLOAD / UPDATE
 # =========================================================
 
-echo "[3/5] Downloading Jukebox..."
+echo "[3/4] Installing Jukebox..."
 
 if [ -d "$APP_DIR/.git" ]; then
 
-    echo "Existing Jukebox installation found."
-    echo "Checking for updates..."
+    echo "Existing installation detected."
+    echo "Updating Jukebox..."
 
-    cd "$APP_DIR"
-
-    git pull --ff-only
+    git -C "$APP_DIR" pull --ff-only
 
 else
 
     if [ -e "$APP_DIR" ]; then
-
         echo
-        echo "ERROR: $APP_DIR already exists but is not a Git repository."
+        echo "ERROR: $APP_DIR already exists."
         echo
-        echo "Please remove or rename it first:"
+        echo "Remove it with:"
         echo
         echo "rm -rf $APP_DIR"
         echo
         exit 1
-
     fi
 
     git clone "$REPO" "$APP_DIR"
 
 fi
 
-echo
-echo "Jukebox files are ready."
-echo
-
 # =========================================================
-# CREATE KARAOKE FOLDER
+# KARAOKE FOLDER
 # =========================================================
-
-echo "[4/5] Preparing KARAOKE folder..."
 
 mkdir -p "$KARAOKE_DIR"
 
 echo
-echo "Karaoke folder:"
+echo "KARAOKE folder:"
 echo "$KARAOKE_DIR"
 echo
 
@@ -129,47 +100,28 @@ echo
 # CHECK SERVER
 # =========================================================
 
-echo "[5/5] Checking Jukebox Server..."
-
-cd "$APP_DIR"
+echo "[4/4] Checking Jukebox Server..."
 
 if [ ! -f "$APP_DIR/jukebox-server.py" ]; then
-
     echo
-    echo "ERROR: jukebox-server.py was not found."
-    echo
+    echo "ERROR: jukebox-server.py not found."
     exit 1
-
 fi
 
 python -m py_compile "$APP_DIR/jukebox-server.py"
 
 echo
-echo "Python syntax check: OK"
+echo "Server check: OK"
 echo
-
-# =========================================================
-# COMPLETE
-# =========================================================
 
 echo "======================================"
 echo "       INSTALLATION COMPLETE"
 echo "======================================"
 echo
 
-echo "Jukebox directory:"
-echo "$APP_DIR"
-echo
-
-echo "Karaoke directory:"
-echo "$KARAOKE_DIR"
-echo
-
 echo "Starting Jukebox Server..."
 echo
 
-# =========================================================
-# START SERVER
-# =========================================================
+cd "$APP_DIR"
 
-exec python "$APP_DIR/jukebox-server.py"
+exec python jukebox-server.py
