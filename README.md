@@ -49,8 +49,8 @@ Accept the Android permission prompt.
 ### 3. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git
-cd YOUR-REPOSITORY/jukebox
+git clone https://github.com/solisjeffrey7/jukebox.git
+cd jukebox
 ```
 
 Or copy `jukebox-server.py` manually into your Termux folder.
