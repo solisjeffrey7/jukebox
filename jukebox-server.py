@@ -293,6 +293,91 @@ PLAYER_CLAIM_HTML = r"""
 html,body{margin:0;width:100%;height:100%;background:#090909;color:#fff;font-family:Arial,Helvetica,sans-serif}
 body{display:flex;align-items:center;justify-content:center}
 #msg{text-align:center;color:#aaa;font-size:14px}
+
+/* =========================================================
+   SONG ACTION PROMPT
+========================================================= */
+.song-action-overlay{
+    position:fixed;
+    inset:0;
+    z-index:9999;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:14px;
+    background:rgba(0,0,0,.72);
+    backdrop-filter:blur(5px);
+}
+.song-action-card{
+    width:min(520px,100%);
+    background:#151515;
+    border:1px solid #333;
+    border-radius:18px;
+    padding:20px;
+    box-shadow:0 18px 60px rgba(0,0,0,.55);
+}
+.song-action-card h2{
+    margin:0 0 8px;
+    font-size:20px;
+}
+.song-action-song{
+    margin:0 0 18px;
+    padding:12px;
+    border-radius:12px;
+    background:#202020;
+}
+.song-action-title{
+    font-weight:700;
+    font-size:17px;
+}
+.song-action-artist{
+    margin-top:3px;
+    color:#aaa;
+    font-size:13px;
+}
+.song-action-buttons{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+}
+.song-action-buttons button{
+    border:0;
+    border-radius:12px;
+    padding:13px 10px;
+    font-weight:700;
+    font-size:14px;
+    cursor:pointer;
+}
+.song-action-play{
+    background:#fff;
+    color:#111;
+}
+.song-action-queue{
+    background:#303030;
+    color:#fff;
+    border:1px solid #444 !important;
+}
+.song-action-cancel{
+    width:100%;
+    margin-top:10px;
+    background:transparent;
+    color:#aaa;
+    border:1px solid #333 !important;
+}
+@media(max-width:600px){
+    .song-action-overlay{
+        padding:12px 10px;
+        align-items:center;
+    }
+    .song-action-card{
+        border-radius:15px;
+        padding:15px;
+    }
+    .song-action-buttons{
+        grid-template-columns:1fr;
+    }
+}
+
 </style>
 </head>
 <body>
@@ -847,6 +932,105 @@ body{min-height:100vh}
 .control{min-width:30px;padding:0 3px}
 .player-link{display:none}
 }
+
+/* =========================================================
+   SONG ACTION PROMPT - REMOTE
+========================================================= */
+.song-action-overlay{
+    position:fixed;
+    inset:0;
+    z-index:99999;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    padding:14px;
+    background:rgba(0,0,0,.72);
+    backdrop-filter:blur(4px);
+}
+.song-action-card{
+    width:min(520px,100%);
+    padding:18px;
+    background:#151515;
+    color:#fff;
+    border:1px solid #333;
+    border-radius:16px;
+    box-shadow:0 12px 40px rgba(0,0,0,.65);
+}
+.song-action-card h2{
+    margin:0 0 12px;
+    font-size:21px;
+    line-height:1.2;
+}
+.song-action-song{
+    margin:0 0 14px;
+    padding:11px 12px;
+    background:#202020;
+    border:1px solid #2d2d2d;
+    border-radius:11px;
+}
+.song-action-title{
+    font-size:16px;
+    font-weight:700;
+    line-height:1.3;
+    word-break:break-word;
+}
+.song-action-artist{
+    margin-top:3px;
+    color:#aaa;
+    font-size:13px;
+    line-height:1.3;
+    word-break:break-word;
+}
+.song-action-buttons{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:9px;
+}
+.song-action-buttons button,
+.song-action-cancel{
+    min-height:44px;
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+}
+.song-action-play{
+    border:1px solid #fff;
+    background:#fff;
+    color:#111;
+}
+.song-action-queue{
+    border:1px solid #444 !important;
+    background:#303030;
+    color:#fff;
+}
+.song-action-cancel{
+    width:100%;
+    margin-top:9px;
+    border:1px solid #3a3a3a !important;
+    background:#191919;
+    color:#aaa;
+}
+.song-action-buttons button:active,
+.song-action-cancel:active{
+    transform:scale(.98);
+}
+@media(max-width:600px){
+    .song-action-card{
+        padding:15px;
+        border-radius:14px;
+    }
+    .song-action-card h2{
+        font-size:19px;
+    }
+}
+@media(max-width:380px){
+    .song-action-buttons{
+        grid-template-columns:1fr;
+    }
+}
+
 </style>
 </head>
 <body>
@@ -1064,12 +1248,12 @@ function renderSongs(){
         row.className="song";
 
         /*
-          BODY = PLAY NOW
+          BODY = SHOW ACTION PROMPT
           PLUS = ADD TO QUEUE ONLY
         */
 
         row.onclick=()=>{
-            playSong(song.id);
+            showSongActionPrompt(song);
         };
 
         row.innerHTML=`
@@ -1103,6 +1287,71 @@ function renderSongs(){
 
         container.appendChild(row);
     }
+}
+
+
+function closeSongActionPrompt(){
+    const overlay=document.getElementById("songActionOverlay");
+    if(overlay) overlay.remove();
+}
+
+function showSongActionPrompt(song){
+    closeSongActionPrompt();
+
+    const overlay=document.createElement("div");
+    overlay.id="songActionOverlay";
+    overlay.className="song-action-overlay";
+
+    overlay.innerHTML=`
+        <div class="song-action-card" role="dialog" aria-modal="true">
+            <h2>What do you want to do?</h2>
+
+            <div class="song-action-song">
+                <div class="song-action-title">
+                    ${escapeHtml(song.code)} - ${escapeHtml(song.title)}
+                </div>
+                <div class="song-action-artist">
+                    ${escapeHtml(song.artist)}
+                </div>
+            </div>
+
+            <div class="song-action-buttons">
+                <button class="song-action-play" id="songActionPlay">
+                    ▶ PLAY IT NOW
+                </button>
+
+                <button class="song-action-queue" id="songActionQueue">
+                    ＋ ADD TO QUEUE
+                </button>
+            </div>
+
+            <button class="song-action-cancel" id="songActionCancel">
+                CANCEL
+            </button>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    document.getElementById("songActionPlay").onclick=async()=>{
+        closeSongActionPrompt();
+        await playSong(song.id);
+    };
+
+    document.getElementById("songActionQueue").onclick=async()=>{
+        closeSongActionPrompt();
+        await addSong(song.id);
+    };
+
+    document.getElementById("songActionCancel").onclick=()=>{
+        closeSongActionPrompt();
+    };
+
+    overlay.onclick=(event)=>{
+        if(event.target===overlay){
+            closeSongActionPrompt();
+        }
+    };
 }
 
 async function playSong(id){
