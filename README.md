@@ -9,7 +9,12 @@ The Android phone acts as the central jukebox server. Karaoke videos remain in A
 ```bash
 git clone https://github.com/solisjeffrey7/jukebox.git && cd jukebox && chmod +x install-termux.sh run.sh && ./install-termux.sh && ./run.sh
 ```
+or
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/solisjeffrey7/jukebox/main/install.sh | bash
+
+```
 
 ## Features
 
