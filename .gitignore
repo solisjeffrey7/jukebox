@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local karaoke/media files
+KARAOKE/
+*.mp4
+*.m4v
+*.webm
+*.mkv
+*.mov
+*.avi
+
+# Local runtime/log files
+*.log
