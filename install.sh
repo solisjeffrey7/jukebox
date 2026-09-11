@@ -12,18 +12,10 @@ echo "       JUKEBOX SERVER INSTALLER"
 echo "======================================"
 echo
 
-# =========================================================
-# CHECK TERMUX
-# =========================================================
-
 if [ -z "$PREFIX" ] || [ ! -d "$PREFIX" ]; then
     echo "ERROR: This installer is for Termux only."
     exit 1
 fi
-
-# =========================================================
-# INSTALL PACKAGES
-# =========================================================
 
 echo "[1/4] Installing Python and Git..."
 
@@ -31,33 +23,21 @@ pkg update -y
 pkg install -y python git
 
 echo
-echo "Python and Git are ready."
-echo
-
-# =========================================================
-# CHECK STORAGE
-# =========================================================
-
 echo "[2/4] Checking Android storage..."
 
 if [ ! -d "$HOME/storage/shared" ]; then
     echo
     echo "ERROR: Android storage is not available."
     echo
-    echo "Please run this ONCE manually:"
+    echo "Run this once manually:"
     echo
     echo "termux-setup-storage"
     echo
-    echo "Then run the installer again."
     exit 1
 fi
 
 echo "Storage: OK"
 echo
-
-# =========================================================
-# DOWNLOAD / UPDATE
-# =========================================================
 
 echo "[3/4] Installing Jukebox..."
 
@@ -85,20 +65,12 @@ else
 
 fi
 
-# =========================================================
-# KARAOKE FOLDER
-# =========================================================
-
 mkdir -p "$KARAOKE_DIR"
 
 echo
 echo "KARAOKE folder:"
 echo "$KARAOKE_DIR"
 echo
-
-# =========================================================
-# CHECK SERVER
-# =========================================================
 
 echo "[4/4] Checking Jukebox Server..."
 
@@ -113,12 +85,10 @@ python -m py_compile "$APP_DIR/jukebox-server.py"
 echo
 echo "Server check: OK"
 echo
-
 echo "======================================"
 echo "       INSTALLATION COMPLETE"
 echo "======================================"
 echo
-
 echo "Starting Jukebox Server..."
 echo
 
