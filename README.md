@@ -4,6 +4,12 @@ A lightweight local-network Karaoke Jukebox Server designed to run on **Android 
 
 The Android phone acts as the central jukebox server. Karaoke videos remain in Android shared storage, while phones/tablets connected to the same Wi-Fi can use the Remote interface to control playback and the shared queue.
 
+### 1. Install 
+
+```bash
+git clone https://github.com/solisjeffrey7/jukebox.git && cd jukebox && chmod +x install-termux.sh run.sh && ./install-termux.sh && ./run.sh```
+
+
 ## Features
 
 - 🎬 Local karaoke video library
