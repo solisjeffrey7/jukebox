@@ -586,6 +586,7 @@ let lastPlayerVersion=-1;
 let lastQueueKey="";
 let lastCommandVersion=0;
 let commandPollRunning=false;
+let playerUpdateInFlight=false;
 
 const video=document.getElementById("video");
 const videoWrapper=document.getElementById("videoWrapper");
@@ -610,6 +611,9 @@ async function api(url,options={}){
 }
 
 async function updatePlayer(){
+    if(playerUpdateInFlight)return;
+    playerUpdateInFlight=true;
+
     try{
         const data=await api("/api/player");
 
@@ -662,6 +666,8 @@ async function updatePlayer(){
         }
     }catch(e){
         console.error("Player update:",e);
+    }finally{
+        playerUpdateInFlight=false;
     }
 }
 
@@ -719,9 +725,15 @@ function startPlayerCommandPoll(){
 
     const tick=async()=>{
         if(!document.hidden){
+            const started=performance.now();
             await checkPlayerCommand();
+            const elapsed=performance.now()-started;
+            // Fast after activity, lighter traffic while idle.
+            const delay=elapsed>120 ? 40 : 120;
+            setTimeout(tick,delay);
+            return;
         }
-        setTimeout(tick,150);
+        setTimeout(tick,1500);
     };
 
     tick();
@@ -1086,6 +1098,14 @@ overscroll-behavior:contain
 .load-more:hover{background:#292929}
 .load-more:active{transform:scale(.99)}
 .connection-lost{color:#fff!important;background:#351717}
+.connection-status{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 9px;border:1px solid #303030;border-radius:999px;background:#171717;color:#aaa;font-size:10px;font-weight:800;letter-spacing:.4px;white-space:nowrap}
+.connection-dot{width:8px;height:8px;border-radius:50%;background:#777;flex:0 0 8px}
+.connection-status.connected{color:#fff;background:#152015}
+.connection-status.connected .connection-dot{background:#58d26b}
+.connection-status.offline{color:#fff;background:#351717}
+.connection-status.offline .connection-dot{background:#ff4d4d}
+.connection-status.reconnecting{color:#fff;background:#302b16}
+.connection-status.reconnecting .connection-dot{background:#e7c84b}
 
 .song-action-overlay{position:fixed;inset:0;z-index:99999;display:flex;justify-content:center;align-items:center;padding:14px;background:rgba(0,0,0,.72);backdrop-filter:blur(4px)}
 .song-action-card{width:min(520px,100%);padding:18px;background:#151515;color:#fff;border:1px solid #333;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.65)}
@@ -1137,6 +1157,7 @@ min-height:0
 <header class="header">
 <div class="logo">KARAOKE REMOTE</div>
 <div class="header-right">
+<div id="connectionStatus" class="connection-status reconnecting"><span class="connection-dot"></span><span id="connectionText">RECONNECTING</span></div>
 <button class="control" onclick="previousSong()" title="Previous">⏮</button>
 <button id="playButton" class="control play" onclick="togglePlay()" title="Play/Pause">▶</button>
 <button class="control" onclick="nextSong()" title="Next">⏭</button>
@@ -1177,8 +1198,11 @@ let loadingMoreSongs=false;
 let hasMoreSongs=true;
 let lastSongsRequestKey="";
 let searchTimer=null;
+let refreshInFlight=false;
 
 let connectionFailCount=0;
+let statusPollInFlight=false;
+let reconnectInFlight=false;
 
 async function api(url,options={},retries=2){
     let lastError;
@@ -1222,15 +1246,78 @@ async function api(url,options={},retries=2){
 
 function setConnectionStatus(online){
     const status=document.getElementById("status");
-    if(!status)return;
+    const badge=document.getElementById("connectionStatus");
+    const text=document.getElementById("connectionText");
 
     if(!online){
-        status.textContent="⚠ CONNECTION LOST — reconnecting...";
-        status.classList.add("connection-lost");
-    }else{
-        status.classList.remove("connection-lost");
+        if(status){
+            status.textContent="⚠ CONNECTION LOST — reconnecting...";
+            status.classList.add("connection-lost");
+        }
+        if(badge)badge.className="connection-status offline";
+        if(text)text.textContent="OFFLINE";
+        return;
+    }
+
+    if(status)status.classList.remove("connection-lost");
+    if(badge)badge.className="connection-status connected";
+    if(text)text.textContent="CONNECTED";
+}
+
+function setReconnecting(){
+    const badge=document.getElementById("connectionStatus");
+    const text=document.getElementById("connectionText");
+    if(badge)badge.className="connection-status reconnecting";
+    if(text)text.textContent="RECONNECTING";
+}
+
+async function checkConnection(){
+    if(statusPollInFlight)return;
+    statusPollInFlight=true;
+
+    try{
+        const data=await api("/api/connection-status",{},0);
+        if(data && data.ok){
+            setConnectionStatus(true);
+        }else{
+            setConnectionStatus(false);
+        }
+    }catch(e){
+        setConnectionStatus(false);
+    }finally{
+        statusPollInFlight=false;
     }
 }
+
+async function recoverConnection(){
+    if(reconnectInFlight)return;
+    reconnectInFlight=true;
+    setReconnecting();
+
+    try{
+        await api("/api/connection-status",{},0);
+        setConnectionStatus(true);
+
+        // Restore the current remote state after Wi-Fi/browser sleep.
+        await Promise.allSettled([
+            loadSongs(true),
+            syncPlayerState()
+        ]);
+    }catch(e){
+        setConnectionStatus(false);
+    }finally{
+        reconnectInFlight=false;
+    }
+}
+
+window.addEventListener("online",recoverConnection);
+window.addEventListener("offline",()=>setConnectionStatus(false));
+
+document.addEventListener("visibilitychange",()=>{
+    if(!document.hidden){
+        recoverConnection();
+    }
+});
 
 async function loadSongs(reset=true){
     const search=document.getElementById("search").value.trim();
@@ -1684,6 +1771,9 @@ loadSongs(true);
 syncPlayerState();
 
 async function refreshFirstBatch(){
+    if(refreshInFlight)return;
+    refreshInFlight=true;
+
     try{
         const search=document.getElementById("search").value.trim();
 
@@ -1717,11 +1807,15 @@ async function refreshFirstBatch(){
         renderSongs(true);
     }catch(e){
         console.error("Library refresh:",e);
+    }finally{
+        refreshInFlight=false;
     }
 }
 
 setInterval(refreshFirstBatch,30000);
 setInterval(syncPlayerState,2000);
+setInterval(checkConnection,3000);
+checkConnection();
 </script>
 </body>
 </html>
@@ -1963,6 +2057,21 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             self.send_json({
                 "ok": True,
                 "command": cmd
+            })
+            return
+        if path=="/api/connection-status":
+            with player_lock:
+                owner=player_owner_token is not None
+                last_seen=player_owner_last_seen
+
+            age=(time.time()-last_seen) if owner else None
+            active=bool(owner and age is not None and age <= PLAYER_LOCK_TIMEOUT)
+
+            self.send_json({
+                "ok":True,
+                "player_active":active,
+                "last_seen":last_seen if active else None,
+                "age":round(age,2) if age is not None else None
             })
             return
 
