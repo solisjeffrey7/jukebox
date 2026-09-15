@@ -8,6 +8,8 @@ import threading
 import urllib.parse
 import socket
 import subprocess
+import zipfile
+import argparse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 HOST = "0.0.0.0"
@@ -16,6 +18,8 @@ KARAOKE_DIR = os.path.expanduser("~/storage/shared/KARAOKE")
 PREVIEW_IMAGE = os.path.expanduser("~/storage/shared/KARAOKE/preview.png")
 
 VIDEO_EXTENSIONS = {".mp4", ".m4v", ".webm", ".mkv", ".mov", ".avi"}
+ZIP_EXTENSIONS = {".zip"}
+# ZIP archives are treated as virtual folders in the Remote UI.
 SCAN_INTERVAL = 30
 MAX_QUEUE = 100
 
@@ -77,6 +81,61 @@ def parse_filename(filename):
     return code, title, artist
 
 
+def scan_zip_songs(zip_path, relative_zip_path):
+    """Index video files inside a ZIP without extracting them to disk."""
+    result=[]
+    try:
+        with zipfile.ZipFile(zip_path,"r") as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+
+                entry_name=info.filename.replace("\\","/").lstrip("/")
+                if not entry_name or entry_name.startswith("../") or "/../" in entry_name:
+                    continue
+
+                ext=os.path.splitext(entry_name)[1].lower()
+                if ext not in VIDEO_EXTENSIONS:
+                    continue
+
+                # Accept both STORED and normal compressed ZIP entries.
+                # MP4 files are usually already compressed, but users may
+                # create ZIPs with the normal ZIP command, so do not hide
+                # those songs from the library. Playback is still streamed
+                # directly from the ZIP without extracting the whole file.
+
+                filename=os.path.basename(entry_name)
+                code,title,artist=parse_filename(filename)
+                virtual_path="@ZIP@/"+relative_zip_path+"::"+entry_name
+
+                result.append({
+                    "id":make_song_id(virtual_path),
+                    "code":code,
+                    "title":title,
+                    "artist":artist,
+                    "filename":filename,
+                    "path":virtual_path,
+                    "size":info.file_size,
+                    "_search":(
+                        code+" "+title+" "+artist+" "+filename
+                    ).lower()
+                })
+    except (OSError,zipfile.BadZipFile,RuntimeError):
+        return []
+
+    result.sort(key=lambda x:x["id"].lower())
+    return result
+
+
+def song_folder_path(song):
+    """Return the folder shown/used by the Remote UI. ZIP files appear as folders."""
+    path=str(song.get("path","")).replace("\\","/")
+    if path.startswith("@ZIP@/") and "::" in path:
+        zip_rel=path[6:].split("::",1)[0]
+        return "@ZIP@/"+zip_rel
+    return os.path.dirname(path).replace("\\","/")
+
+
 def scan_songs():
     global songs, song_map, last_scan, songs_version, scan_cache
 
@@ -131,6 +190,19 @@ def scan_songs():
                 continue
 
             ext=os.path.splitext(name)[1].lower()
+
+            if ext in ZIP_EXTENSIONS:
+                try:
+                    zip_stat=entry.stat(follow_symlinks=False)
+                    zip_songs=scan_zip_songs(
+                        entry.path,
+                        os.path.join(relative_dir,name).replace("\\","/")
+                    )
+                    directory_songs.extend(zip_songs)
+                except OSError:
+                    pass
+                continue
+
             if ext not in VIDEO_EXTENSIONS:
                 continue
 
@@ -1813,8 +1885,8 @@ async function refreshFirstBatch(){
 }
 
 setInterval(refreshFirstBatch,30000);
-setInterval(syncPlayerState,2000);
-setInterval(checkConnection,3000);
+setInterval(syncPlayerState,4000);
+setInterval(checkConnection,5000);
 checkConnection();
 </script>
 </body>
@@ -1834,7 +1906,7 @@ class JukeboxHTTPServer(ThreadingHTTPServer):
 
 class JukeboxHandler(BaseHTTPRequestHandler):
 
-    server_version = "KaraokeJukebox/2.0"
+    server_version = "KaraokeJukebox/2.0-ZIP-FIXED"
     timeout = 15
 
     def setup(self):
@@ -1956,7 +2028,7 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             if folder:
                 source=[
                     song for song in source
-                    if os.path.dirname(song["path"]).replace("\\","/")==folder
+                    if song_folder_path(song)==folder
                 ]
 
             if search:
@@ -1981,7 +2053,7 @@ class JukeboxHandler(BaseHTTPRequestHandler):
 
             folder_counts={}
             for song in all_source:
-                folder_path=os.path.dirname(song["path"]).replace("\\","/")
+                folder_path=song_folder_path(song)
                 if folder_path:
                     folder_counts[folder_path]=folder_counts.get(folder_path,0)+1
 
@@ -2344,6 +2416,16 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             self.send_error(403,"Forbidden")
             return
 
+        # Virtual ZIP entry: @ZIP@/archive.zip::folder/song.mp4
+        if relative_path.startswith("@ZIP@/") and "::" in relative_path:
+            zip_rel,entry_name=relative_path[6:].split("::",1)
+            zip_path=os.path.abspath(os.path.join(KARAOKE_DIR,zip_rel))
+            if not (zip_path==base or zip_path.startswith(base+os.sep)):
+                self.send_error(403,"Forbidden")
+                return
+            self.serve_zip_video(zip_path,entry_name)
+            return
+
         if not os.path.isfile(requested):
             self.send_error(404,"Video not found")
             return
@@ -2453,6 +2535,108 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             length
         )
 
+    def serve_zip_video(self,zip_path,entry_name):
+        """Stream a video entry from ZIP. Range requests are supported."""
+        try:
+            with zipfile.ZipFile(zip_path,"r") as zf:
+                try:
+                    info=zf.getinfo(entry_name)
+                except KeyError:
+                    self.send_error(404,"Video not found in ZIP")
+                    return
+
+                if info.is_dir():
+                    self.send_error(404,"Video not found")
+                    return
+
+                file_size=info.file_size
+                content_type=(
+                    mimetypes.guess_type(entry_name)[0]
+                    or "video/mp4"
+                )
+                range_header=self.headers.get("Range")
+
+                if not range_header:
+                    self.send_response(200)
+                    self.send_header("Content-Type",content_type)
+                    self.send_header("Content-Length",str(file_size))
+                    self.send_header("Accept-Ranges","bytes")
+                    self.send_header("Cache-Control","no-cache")
+                    self.send_header("Connection","close")
+                    self.end_headers()
+                    self.copy_zip_file(zf,info,0,file_size)
+                    return
+
+                try:
+                    if not range_header.startswith("bytes="):
+                        raise ValueError
+                    range_value=range_header.split("=",1)[1].split(",",1)[0]
+                    start_text,end_text=range_value.split("-",1)
+
+                    if start_text:
+                        start=int(start_text)
+                    else:
+                        suffix=int(end_text)
+                        if suffix<=0:
+                            raise ValueError
+                        start=max(file_size-suffix,0)
+
+                    if end_text:
+                        end=int(end_text)
+                    else:
+                        end=file_size-1
+
+                    if start<0 or start>=file_size or end<start:
+                        raise ValueError
+                    end=min(end,file_size-1)
+                except Exception:
+                    self.send_response(416)
+                    self.send_header("Content-Range","bytes */"+str(file_size))
+                    self.send_header("Connection","close")
+                    self.end_headers()
+                    return
+
+                length=end-start+1
+                self.send_response(206)
+                self.send_header("Content-Type",content_type)
+                self.send_header("Content-Length",str(length))
+                self.send_header(
+                    "Content-Range",
+                    "bytes "+str(start)+"-"+str(end)+"/"+str(file_size)
+                )
+                self.send_header("Accept-Ranges","bytes")
+                self.send_header("Cache-Control","no-cache")
+                self.send_header("Connection","close")
+                self.end_headers()
+                self.copy_zip_file(zf,info,start,length)
+
+        except (OSError,zipfile.BadZipFile,KeyError):
+            try:
+                self.send_error(404,"ZIP video unavailable")
+            except Exception:
+                pass
+
+    def copy_zip_file(self,zf,info,start,length):
+        try:
+            with zf.open(info,"r") as file:
+                remaining_skip=start
+                while remaining_skip>0:
+                    chunk=file.read(min(1024*1024,remaining_skip))
+                    if not chunk:
+                        return
+                    remaining_skip-=len(chunk)
+
+                remaining=length
+                while remaining>0:
+                    chunk=file.read(min(1024*1024,remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining-=len(chunk)
+        except (BrokenPipeError,ConnectionResetError,socket.timeout,OSError,zipfile.BadZipFile):
+            pass
+
+
     def copy_file(self,path,start,length):
 
         try:
@@ -2526,6 +2710,129 @@ def open_browser(url):
 
         print("BROWSER OPEN ERROR:",e)
         return False
+
+
+def create_karaoke_zip():
+    """Move loose karaoke videos into MY KARAOKE.zip using ZIP STORED.
+
+    Low-storage mode: each source video is deleted immediately after Python
+    successfully writes that entry to the archive and verifies its stored size.
+    """
+    os.makedirs(KARAOKE_DIR, exist_ok=True)
+
+    # Keep the archive INSIDE KARAOKE_DIR so the jukebox can scan/play it.
+    output_path=os.path.join(KARAOKE_DIR,"MY KARAOKE.zip")
+    temp_path=output_path+".part"
+
+    print()
+    print("==========================================")
+    print("   KARAOKE JUKEBOX v8.5 -- ZIP MOVE")
+    print("==========================================")
+    print("Source:", KARAOKE_DIR)
+    print("Output:", output_path)
+    print("Mode: ZIP STORED (-0) + MOVE/DELETE")
+    print()
+
+    videos=[]
+    for root, dirs, files in os.walk(KARAOKE_DIR):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        for name in sorted(files,key=str.lower):
+            if name.startswith("."):
+                continue
+            if os.path.splitext(name)[1].lower() not in VIDEO_EXTENSIONS:
+                continue
+            full_path=os.path.join(root,name)
+            rel_path=os.path.relpath(full_path,KARAOKE_DIR).replace("\\","/")
+            videos.append((full_path,rel_path))
+
+    if not videos:
+        if os.path.isfile(output_path):
+            print("No loose video files found.")
+            print("Existing archive:",output_path)
+            return 0
+        print("No video files found in KARAOKE folder.")
+        return 1
+
+    # A previous archive would otherwise be replaced. This command is intended
+    # to consolidate the current loose-video library into one fresh archive.
+    if os.path.exists(temp_path):
+        try:
+            os.remove(temp_path)
+        except OSError as e:
+            print("ERROR: Cannot remove old temporary ZIP:",e)
+            return 1
+
+    if os.path.exists(output_path):
+        print("ERROR: MY KARAOKE.zip already exists.")
+        print("For safety, it was NOT overwritten.")
+        print("Rename/remove the old ZIP first, then run --zip again.")
+        return 1
+
+    print("Videos found:",len(videos))
+    print("IMPORTANT: Original video is deleted after each successful ZIP write.")
+    print()
+
+    moved=0
+    try:
+        with zipfile.ZipFile(
+            temp_path,
+            mode="w",
+            compression=zipfile.ZIP_STORED,
+            allowZip64=True
+        ) as zf:
+            for number,(full_path,rel_path) in enumerate(videos,1):
+                source_size=os.path.getsize(full_path)
+                print("[{}/{}] {}".format(number,len(videos),rel_path),flush=True)
+
+                # zipfile writes from disk as a stream; it does not load the
+                # complete video into RAM.
+                zf.write(
+                    full_path,
+                    arcname=rel_path,
+                    compress_type=zipfile.ZIP_STORED
+                )
+
+                # Verify the entry metadata before deleting the source.
+                info=zf.getinfo(rel_path)
+                if info.file_size != source_size or info.compress_type != zipfile.ZIP_STORED:
+                    raise RuntimeError("ZIP verification failed for: "+rel_path)
+
+                os.remove(full_path)
+                moved += 1
+                print("        moved -> ZIP, original deleted",flush=True)
+
+        # Closing the ZipFile writes its central directory. Only then expose
+        # the final .zip name to the jukebox scanner.
+        os.replace(temp_path,output_path)
+
+    except Exception as e:
+        print()
+        print("ZIP/MOVE ERROR:",e)
+        print("Moved before error:",moved,"of",len(videos))
+        if os.path.exists(temp_path):
+            print("Partial archive kept for recovery:",temp_path)
+        print("Files already moved were not duplicated back to save storage.")
+        return 1
+
+    # Remove empty subfolders left after moving videos. Never remove root.
+    for root, dirs, files in os.walk(KARAOKE_DIR,topdown=False):
+        if os.path.abspath(root)==os.path.abspath(KARAOKE_DIR):
+            continue
+        try:
+            if not os.listdir(root):
+                os.rmdir(root)
+        except OSError:
+            pass
+
+    size=os.path.getsize(output_path)
+    print()
+    print("ZIP MOVE COMPLETED SUCCESSFULLY")
+    print("File:",output_path)
+    print("Size: {:.2f} GB ({:,} bytes)".format(size/(1024**3),size))
+    print("Videos moved/deleted:",moved)
+    print("Original loose videos remaining: 0")
+    print()
+    return 0
 
 
 def main():
@@ -2618,4 +2925,6 @@ def main():
 
 
 if __name__=="__main__":
+    if "--zip" in __import__("sys").argv[1:]:
+        raise SystemExit(create_karaoke_zip())
     main()
