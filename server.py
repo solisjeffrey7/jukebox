@@ -327,6 +327,8 @@ def public_song(song):
         result["youtube"]=True
         result["youtube_id"]=song.get("youtube_id","")
         result["thumbnail"]=song.get("thumbnail","")
+        if song.get("saved_link"):
+            result["saved_link"]=True
     return result
 
 
@@ -936,13 +938,96 @@ video{display:none;width:100%;height:100%;background:#000;object-fit:contain}
 .normal-remote-qr img,.fullscreen-remote-qr img{cursor:pointer}
 
 
-/* Desktop: hide the QR overlay inside the video. Mobile keeps it visible. */
+/* Desktop: keep the QR ABOVE the video.
+   Hide only the QR that is INSIDE the video. */
 @media (min-width: 851px){
-    #videoQr, #videoQr + div{
+    .normal-remote-qr{
+        display:flex !important;
+    }
+    .video-wrapper .fullscreen-remote-qr{
         display:none !important;
     }
 }
 </style>
+
+
+<style id="fullscreen-picker-css">
+#fullscreenPicker{
+    position:fixed!important;
+    inset:0!important;
+    width:100vw!important;
+    height:100vh!important;
+    display:none;
+    align-items:center!important;
+    justify-content:center!important;
+    padding:16px!important;
+    box-sizing:border-box!important;
+    background:rgba(0,0,0,.72)!important;
+    z-index:2147483647!important;
+}
+#fullscreenPicker.show{display:flex!important}
+#fullscreenPicker .fullscreen-picker-box{
+    display:block!important;
+    position:relative!important;
+    width:min(420px,calc(100vw - 32px))!important;
+    max-width:420px!important;
+    box-sizing:border-box!important;
+    padding:22px!important;
+    border-radius:18px!important;
+    background:#181818!important;
+    color:#fff!important;
+    box-shadow:0 12px 50px rgba(0,0,0,.55)!important;
+}
+#fullscreenPicker .fullscreen-choice{
+    width:100%!important;
+    min-height:64px!important;
+    display:flex!important;
+    align-items:center!important;
+    gap:14px!important;
+    text-align:left!important;
+    padding:14px 16px!important;
+    margin:9px 0!important;
+    border:1px solid rgba(255,255,255,.18)!important;
+    border-radius:14px!important;
+    background:rgba(255,255,255,.07)!important;
+    color:#fff!important;
+    cursor:pointer!important;
+    -webkit-tap-highlight-color:transparent;
+}
+#fullscreenPicker .fullscreen-choice:active{transform:scale(.99);background:rgba(255,255,255,.14)!important}
+#fullscreenPicker .choice-icon{font-size:28px!important;line-height:1}
+#fullscreenPicker .fullscreen-choice b{display:block!important;font-size:16px!important}
+#fullscreenPicker .fullscreen-choice small{display:block!important;opacity:.68!important;margin-top:3px!important}
+#fullscreenPicker .fullscreen-cancel{
+    width:100%!important;
+    margin-top:8px!important;
+    padding:12px!important;
+    border:0!important;
+    border-radius:12px!important;
+    background:transparent!important;
+    color:#fff!important;
+    opacity:.72!important;
+    cursor:pointer!important;
+}
+</style>
+
+
+<style id="fullscreen-icon-style">
+#fullscreenButton .fullscreen-icon,
+#fullscreenButton .fullscreen-state-icon{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    line-height:1;
+    font-size:1.1em;
+    transition:transform .15s ease;
+}
+#fullscreenButton.is-fullscreen .fullscreen-icon,
+#fullscreenButton.is-fullscreen .fullscreen-state-icon{
+    transform:scale(.96);
+}
+</style>
+
 </head>
 <body>
 <script>
@@ -954,7 +1039,7 @@ document.addEventListener("cut",e=>e.preventDefault());
 document.addEventListener("dragover",e=>{if(!e.target.closest(".queue-item"))e.preventDefault();});
 </script>
 <header class="header">
-<div class="logo">Jukebox <span style="font-size:11px;font-weight:500;opacity:.65;vertical-align:middle;">V10.4.83</span></div>
+<div class="logo">Jukebox <span style="font-size:11px;font-weight:500;opacity:.65;vertical-align:middle;">V10.4.92</span></div>
 <div class="header-right">
 <div id="playerBadge" class="player-badge">PLAYER</div>
 <a id="remoteLink" class="remote-link" href="#" target="_blank">REMOTE</a>
@@ -978,7 +1063,7 @@ document.addEventListener("dragover",e=>{if(!e.target.closest(".queue-item"))e.p
 <img id="fullscreenQr" alt="Remote QR">
 </div>
 
-<button id="fullscreenButton" class="fullscreen-button" onclick="toggleFullscreen()">⛶</button>
+<button id="fullscreenButton" class="fullscreen-button" onclick="(document.fullscreenElement?exitAllFullscreen():openFullscreenPicker())">⛶</button>
 </div>
 
 <section class="now-playing">
@@ -1018,7 +1103,9 @@ let youtubePlayerEl=document.getElementById("youtubePlayer");
 const videoWrapper=document.getElementById("videoWrapper");
 let ytPlayer=null;
 let ytApiReady=false;
+let ytPlayerReady=false;
 let ytPendingId=null;
+let currentIsYouTube=false;
 
 (function loadYouTubeAPI(){
     const tag=document.createElement("script");
@@ -1034,20 +1121,23 @@ function destroyYouTube(){
     if(ytPlayer){
         try{ytPlayer.destroy();}catch(e){}
         ytPlayer=null;
+        ytPlayerReady=false;
     }
     ytPendingId=null;
     youtubePlayerEl.innerHTML="";
     videoWrapper.classList.remove("youtube-active");
+    currentIsYouTube=false;
 }
 
 function loadYouTube(videoId){
+    currentIsYouTube=true;
     ytPendingId=videoId;
     videoWrapper.classList.add("has-video","youtube-active");
     video.pause();
     video.removeAttribute("src");
     video.load();
     if(!ytApiReady)return;
-    if(ytPlayer){
+    if(ytPlayer && ytPlayerReady){
         try{
             ytPlayer.loadVideoById(videoId);
             ytPendingId=null;
@@ -1055,13 +1145,24 @@ function loadYouTube(videoId){
         }catch(e){}
     }
     youtubePlayerEl.innerHTML="";
+    ytPlayerReady=false;
     ytPlayer=new YT.Player(youtubePlayerEl,{
         width:"100%",height:"100%",videoId:videoId,
         playerVars:{autoplay:1,controls:0,playsinline:1,rel:0,fs:0,origin:window.location.origin},
         events:{
             onReady:function(event){
+                ytPlayerReady=true;
                 ytPendingId=null;
                 event.target.playVideo();
+                // Re-sync the newly-created YouTube player with the server state.
+                api("/api/player").then(function(state){
+                    if(state && state.ok && ytPlayer===event.target){
+                        try{
+                            if(state.playing) event.target.playVideo();
+                            else event.target.pauseVideo();
+                        }catch(e){}
+                    }
+                }).catch(()=>{});
             },
             onStateChange:function(event){
                 if(event.data===0){
@@ -1121,12 +1222,14 @@ function applyDroppedCurrentSong(current){
     try{ video.removeAttribute("src"); video.load(); }catch(e){}
 
     if(current.youtube && current.youtube_id){
+        currentIsYouTube=true;
         // HARD REMOVE the old YouTube iframe/player, then replace its DOM node.
         if(ytPlayer){
             try{ytPlayer.stopVideo();}catch(e){}
             try{ytPlayer.destroy();}catch(e){}
         }
         ytPlayer=null;
+        ytPlayerReady=false;
         ytPendingId=null;
 
         const oldEl=document.getElementById("youtubePlayer");
@@ -1174,6 +1277,7 @@ async function updatePlayer(){
                 document.getElementById("nowArtist").textContent=
                     current.artist||"Unknown artist";
 
+                currentIsYouTube=!!(current.youtube && current.youtube_id);
                 if(currentSongId!==current.id){
                     currentSongId=current.id;
                     if(current.youtube && current.youtube_id){
@@ -1249,13 +1353,12 @@ async function checkPlayerCommand(){
             song.artist||"Unknown artist";
 
         currentSongId=song.id;
-        loadingVideo=true;
         if(song.youtube && song.youtube_id){
+            loadingVideo=true;
             loadYouTube(song.youtube_id);
             loadingVideo=false;
         }else{
             loadVideo(song);
-            loadingVideo=false;
         }
 
         setTimeout(()=>{remoteCommand=false;},700);
@@ -1301,39 +1404,63 @@ function loadVideo(song){
     setTimeout(()=>{loadingVideo=false;},300);
 }
 
-// DOUBLE TAP ONLY = fullscreen.
-// A single tap never enters fullscreen. Use one pointer listener only so
-// Android does not count pointerup + touchend as two taps.
+// DOUBLE TAP:
+// Mobile: directly enter/exit normal video-container fullscreen.
+// Desktop: popup when normal; exit native fullscreen when already fullscreen.
 let lastTapTime=0;
 let lastTapX=0;
 let lastTapY=0;
-function detectDoubleTap(e){
-    if(e.pointerType === "mouse" && e.button !== 0)return;
+let lastTapPointerId=null;
+
+function handleDoubleTap(e){
+    if(e.type==="pointerup"){
+        if(e.pointerType==="mouse" && e.button!==0)return;
+        if(lastTapPointerId!==null && e.pointerId!==lastTapPointerId)return;
+        lastTapPointerId=e.pointerId;
+    }
+
     const now=Date.now();
-    const x=e.clientX || 0;
-    const y=e.clientY || 0;
+    const x=(typeof e.clientX==="number") ? e.clientX : 0;
+    const y=(typeof e.clientY==="number") ? e.clientY : 0;
     const dx=Math.abs(x-lastTapX);
     const dy=Math.abs(y-lastTapY);
 
-    if(lastTapTime && (now-lastTapTime) < 450 && dx < 100 && dy < 100){
-        e.preventDefault();
-        e.stopPropagation();
+    if(lastTapTime>0 && (now-lastTapTime)<=500 && dx<=120 && dy<=120){
+        if(e.cancelable)e.preventDefault();
+
         lastTapTime=0;
-        toggleFullscreen();
-        return;
+        lastTapX=0;
+        lastTapY=0;
+
+        if(document.fullscreenElement){
+            exitAllFullscreen();
+        }else if(isMobileView()){
+            fullscreenVideoOnly();
+        }else{
+            openFullscreenPicker();
+        }
+        return true;
     }
+
     lastTapTime=now;
     lastTapX=x;
     lastTapY=y;
+    return false;
 }
 
-// Capture once at wrapper level. No touchend listener and no second pointer
-// listener, preventing a single Android tap from becoming a double tap.
-videoWrapper.addEventListener("pointerup",detectDoubleTap,{capture:true,passive:false});
-videoWrapper.addEventListener("dblclick",(e)=>{
+videoWrapper.addEventListener("pointerup",handleDoubleTap,{capture:true,passive:false});
+
+videoWrapper.addEventListener("dblclick",function(e){
     e.preventDefault();
     e.stopPropagation();
-    toggleFullscreen();
+
+    if(document.fullscreenElement){
+        exitAllFullscreen();
+    }else if(isMobileView()){
+        fullscreenVideoOnly();
+    }else{
+        openFullscreenPicker();
+    }
 });
 
 video.addEventListener("ended",nextSong);
@@ -1362,18 +1489,54 @@ video.addEventListener("pause",async()=>{
     }catch(e){}
 });
 
+async function waitForYouTubeReady(timeout=3000){
+    if(!currentIsYouTube && !videoWrapper.classList.contains("youtube-active"))return true;
+    const started=Date.now();
+    while(Date.now()-started<timeout){
+        if(ytPlayer && ytPlayerReady)return true;
+        await new Promise(r=>setTimeout(r,100));
+    }
+    return !!(ytPlayer && ytPlayerReady);
+}
+
 async function togglePlay(){
     try{
         remoteCommand=true;
 
+        // After a YouTube DROP the old iframe is destroyed and a completely
+        // new player is created. Wait for that new player to become ready
+        // BEFORE toggling the server state, so the returned state can always
+        // be applied to the correct YouTube player.
+        const isYT=currentIsYouTube || videoWrapper.classList.contains("youtube-active");
+        if(isYT){
+            await waitForYouTubeReady(3000);
+        }
+
         const data=await api("/api/player/toggle",{method:"POST"});
 
         if(data.ok){
-            if(videoWrapper.classList.contains("youtube-active") && ytPlayer){
-                try{
-                    if(data.playing) ytPlayer.playVideo();
-                    else ytPlayer.pauseVideo();
-                }catch(e){}
+            if(currentIsYouTube || videoWrapper.classList.contains("youtube-active")){
+                const applyYT=()=>{
+                    if(!ytPlayer || !ytPlayerReady)return false;
+                    try{
+                        const state=ytPlayer.getPlayerState();
+                        if(data.playing){
+                            ytPlayer.playVideo();
+                        }else{
+                            ytPlayer.pauseVideo();
+                        }
+                        return true;
+                    }catch(e){return false;}
+                };
+                if(!applyYT()){
+                    setTimeout(applyYT,100);
+                    setTimeout(applyYT,300);
+                    setTimeout(applyYT,600);
+                    setTimeout(applyYT,1000);
+                    setTimeout(applyYT,1500);
+                    setTimeout(applyYT,2200);
+                    setTimeout(applyYT,3000);
+                }
             }else if(data.playing){
                 await video.play().catch(()=>{});
             }else{
@@ -1383,7 +1546,7 @@ async function togglePlay(){
     }catch(e){
         console.error(e);
     }finally{
-        setTimeout(()=>{remoteCommand=false;},400);
+        setTimeout(()=>{remoteCommand=false;},700);
     }
 }
 
@@ -1392,9 +1555,15 @@ async function nextSong(){
         const data=await api("/api/player/next",{method:"POST"});
         if(!data.ok)return;
 
+        // Use the same HARD REMOVE + CREATE NEW IFRAME flow as queue DROP.
+        // This prevents the previous YouTube iframe/player from continuing
+        // playback when NEXT switches to another YouTube song.
         currentSongId=null;
         lastPlayerVersion=-1;
-        await updatePlayer();
+        if(data.current){
+            applyDroppedCurrentSong(data.current);
+        }
+        setTimeout(()=>updatePlayer(),120);
     }catch(e){
         console.error(e);
     }
@@ -1405,9 +1574,13 @@ async function previousSong(){
         const data=await api("/api/player/previous",{method:"POST"});
         if(!data.ok)return;
 
+        // Same HARD REMOVE + CREATE NEW IFRAME flow for PREV.
         currentSongId=null;
         lastPlayerVersion=-1;
-        await updatePlayer();
+        if(data.current){
+            applyDroppedCurrentSong(data.current);
+        }
+        setTimeout(()=>updatePlayer(),120);
     }catch(e){
         console.error(e);
     }
@@ -1615,7 +1788,7 @@ function renderQueue(queue){
 
             if(!Number.isInteger(from))return;
 
-            // Drop on PLAY / PAUSE = play immediately and remove from queue.
+            // Drop on PLAY / PAUSE = move to front of queue, then NEXT.
             if(playerTarget){
                 try{
                     const queueData=await api("/api/player");
@@ -1623,14 +1796,29 @@ function renderQueue(queue){
                     const song=queue[from];
                     if(!song)return;
 
-                    const data=await api("/api/player/play",{
+                    // DROP ON PLAY/PAUSE = NEXT.
+                    // Move dropped song to queue position 0, then advance to it.
+                    const reorder=await api("/api/queue/reorder",{
                         method:"POST",
                         headers:{"Content-Type":"application/json"},
-                        body:JSON.stringify({id:song.id})
+                        body:JSON.stringify({
+                            from_position:from,
+                            to_position:0
+                        })
                     });
-                    if(data.ok){
+                    if(reorder.ok){
                         lastPlayerVersion=-1;
                         await updatePlayer();
+
+                        const data=await api("/api/player/next",{method:"POST"});
+                        if(data.ok){
+                            currentSongId=null;
+                            lastPlayerVersion=-1;
+                            if(data.current){
+                                applyDroppedCurrentSong(data.current);
+                            }
+                            setTimeout(()=>updatePlayer(),120);
+                        }
                     }
                 }catch(err){
                     console.error("Touch queue drop-to-play:",err);
@@ -1672,8 +1860,7 @@ function renderQueue(queue){
     });
 }
 
-// Drag any queued song onto PLAY / PAUSE to play it immediately.
-// The server's set_current_song() removes that song from the queue.
+// Drag any queued song onto PLAY / PAUSE = move it to front, then NEXT.
 (function setupQueueDropToPlayer(){
     const dropTarget=document.getElementById("playPauseButton");
     if(!dropTarget)return;
@@ -1704,18 +1891,30 @@ function renderQueue(queue){
             const song=queue[from];
             if(!song)return;
 
-            const data=await api("/api/player/play",{
+            // DROP ON PLAY/PAUSE = NEXT.
+            // Move dropped song to queue position 0, then advance to it.
+            const reorder=await api("/api/queue/reorder",{
                 method:"POST",
                 headers:{"Content-Type":"application/json"},
-                body:JSON.stringify({id:song.id})
+                body:JSON.stringify({
+                    from_position:from,
+                    to_position:0
+                })
             });
 
-            if(data.ok){
+            if(reorder.ok){
                 lastPlayerVersion=-1;
-                if(data.current){
-                    applyDroppedCurrentSong(data.current);
-                }
                 await updatePlayer();
+
+                const data=await api("/api/player/next",{method:"POST"});
+                if(data.ok){
+                    currentSongId=null;
+                    lastPlayerVersion=-1;
+                    if(data.current){
+                        applyDroppedCurrentSong(data.current);
+                    }
+                    setTimeout(()=>updatePlayer(),120);
+                }
             }
         }catch(err){
             console.error("Queue drop-to-play:",err);
@@ -1818,11 +2017,23 @@ setInterval(updatePlayer,2000);
 
 <script>
 (function(){
+  let qrPopupOriginalParent=null;
+
   function openQrPopup(){
     const src = document.getElementById("videoQr")?.src || document.getElementById("fullscreenQr")?.src;
     const popup = document.getElementById("qrPopup");
     const image = document.getElementById("qrPopupImage");
     if(!popup || !image || !src) return;
+
+    // When the Player uses the browser Fullscreen API, only descendants of
+    // the fullscreen element are visible above the video. Move the popup
+    // into that element while it is open.
+    const fs=document.fullscreenElement;
+    if(fs && popup.parentElement!==fs){
+      qrPopupOriginalParent=popup.parentElement;
+      fs.appendChild(popup);
+    }
+
     image.src = src;
     popup.classList.add("show");
     popup.setAttribute("aria-hidden","false");
@@ -1832,7 +2043,26 @@ setInterval(updatePlayer,2000);
     if(!popup) return;
     popup.classList.remove("show");
     popup.setAttribute("aria-hidden","true");
+    if(qrPopupOriginalParent){
+      qrPopupOriginalParent.appendChild(popup);
+      qrPopupOriginalParent=null;
+    }
   }
+
+  // If fullscreen is exited while the QR popup is open, return it to the
+  // normal document so it remains usable on the next fullscreen session.
+  document.addEventListener("fullscreenchange",()=>{
+    const popup=document.getElementById("qrPopup");
+    if(!popup || !popup.classList.contains("show")) return;
+    if(!document.fullscreenElement){
+      popup.classList.remove("show");
+      popup.setAttribute("aria-hidden","true");
+      if(qrPopupOriginalParent){
+        qrPopupOriginalParent.appendChild(popup);
+        qrPopupOriginalParent=null;
+      }
+    }
+  });
   window.openQrPopup = openQrPopup;
   document.addEventListener("DOMContentLoaded", function(){
     ["videoQr","fullscreenQr"].forEach(function(id){
@@ -1850,6 +2080,181 @@ setInterval(updatePlayer,2000);
     });
   });
 })();
+</script>
+
+
+<!-- Fullscreen Mode Picker -->
+<div id="fullscreenPicker" class="modal-overlay" style="display:none;z-index:99999;">
+  <div class="modal-box fullscreen-picker-box">
+    <div class="modal-title">Fullscreen</div>
+    <div class="fullscreen-picker-subtitle">Choose fullscreen mode</div>
+    <button class="fullscreen-choice" onclick="customFullscreenWithQueue()">
+      <span class="choice-icon">⛶</span>
+      <span><b>Custom Fullscreen</b><small>Fullscreen with Queue</small></span>
+    </button>
+    <button class="fullscreen-choice" onclick="fullscreenVideoOnly()">
+      <span class="choice-icon">⛶</span>
+      <span><b>Fullscreen</b><small>Video Container + Video / iframe</small></span>
+    </button>
+    <button class="fullscreen-cancel" onclick="closeFullscreenPicker()">Cancel</button>
+  </div>
+</div>
+
+
+<script>
+function isMobileView(){
+    // IMPORTANT: Match the same breakpoint used by the fullscreen CSS:
+    // @media(max-width:850px)
+    //
+    // This keeps the JS behavior exactly synchronized with the CSS.
+    // <=850px = mobile layout/fullscreen, >850px = desktop popup.
+    return window.innerWidth <= 850;
+}
+
+function openFullscreenPicker(){
+    // Mobile: NEVER show the mode popup.
+    // Keep the mobile fullscreen behavior direct.
+    if(isMobileView()){
+        if(typeof fullscreenVideoOnly==="function"){
+            fullscreenVideoOnly();
+        }
+        return;
+    }
+
+    const p=document.getElementById("fullscreenPicker");
+    if(!p)return;
+    p.classList.add("show");
+    p.style.display="flex";
+    p.style.visibility="visible";
+    p.style.opacity="1";
+    p.style.pointerEvents="auto";
+}
+function closeFullscreenPicker(){
+    const p=document.getElementById("fullscreenPicker");
+    if(!p)return;
+    p.classList.remove("show");
+    p.style.display="none";
+    p.style.pointerEvents="none";
+}
+function updateFullscreenButton(){
+    const btn=document.getElementById("fullscreenButton");
+    if(!btn)return;
+
+    const active=!!document.fullscreenElement ||
+        (typeof document.body!=="undefined" &&
+         document.body.classList.contains("fullscreen"));
+
+    btn.setAttribute("aria-label",active ? "Exit Fullscreen" : "Fullscreen");
+    btn.title=active ? "Exit Fullscreen" : "Fullscreen";
+
+    // ICON ONLY — no "Fullscreen" / "Exit Fullscreen" text.
+    const icon=btn.querySelector(".fullscreen-icon");
+    const text=btn.querySelector(".fullscreen-text");
+
+    if(icon) icon.textContent=active ? "🗗" : "⛶";
+    if(text) text.textContent="";
+
+    if(!icon && !text){
+        if(btn.children.length===0){
+            btn.textContent=active ? "🗗" : "⛶";
+        }else{
+            let stateIcon=btn.querySelector(".fullscreen-state-icon");
+            if(!stateIcon){
+                stateIcon=document.createElement("span");
+                stateIcon.className="fullscreen-state-icon";
+                btn.insertBefore(stateIcon,btn.firstChild);
+            }
+            stateIcon.textContent=active ? "🗗" : "⛶";
+        }
+    }
+
+    btn.classList.toggle("is-fullscreen",active);
+}
+
+async function exitAllFullscreen(){
+    try{
+        if(document.fullscreenElement){
+            await document.exitFullscreen();
+        }
+    }catch(e){
+        console.error("Exit native fullscreen failed:",e);
+    }
+
+    // Existing custom fullscreen toggle should be used to exit custom mode.
+    if(document.body.classList.contains("fullscreen")
+       && typeof toggleFullscreen==="function"){
+        try{ await toggleFullscreen(); }catch(e){ console.error(e); }
+    }
+
+    updateFullscreenButton();
+}
+
+document.addEventListener("fullscreenchange",updateFullscreenButton);
+document.addEventListener("webkitfullscreenchange",updateFullscreenButton);
+
+async function fullscreenVideoOnly(){
+    // NORMAL FULLSCREEN:
+    // Fullscreen the VIDEO CONTAINER, which contains either the local
+    // <video> element or the YouTube <iframe>.
+    // The queue/header/page outside this container stays outside fullscreen.
+    try{
+        if(document.fullscreenElement){
+            await document.exitFullscreen();
+            updateFullscreenButton();
+            return;
+        }
+
+        const target = (typeof videoWrapper!=="undefined") ? videoWrapper : null;
+
+        if(!target){
+            throw new Error("Video container not found");
+        }
+
+        if(target.requestFullscreen){
+            await target.requestFullscreen();
+        }else if(target.webkitRequestFullscreen){
+            target.webkitRequestFullscreen();
+        }else{
+            throw new Error("Container fullscreen API unavailable");
+        }
+        updateFullscreenButton();
+    }catch(e){
+        console.error("Video container fullscreen failed:",e);
+        alert("Fullscreen is not supported by this browser/device.");
+    }
+}
+
+async function customFullscreenWithQueue(){
+    // CUSTOM FULLSCREEN: use the existing Jukebox custom fullscreen.
+    // This keeps the Jukebox queue and its custom player layout.
+    try{
+        if(typeof toggleFullscreen==="function"){
+            await toggleFullscreen();
+        }else{
+            console.error("Existing custom fullscreen function not found.");
+        }
+    }catch(e){
+        console.error("Custom fullscreen failed:",e);
+    }
+}
+
+async function chooseFullscreenMode(mode){
+    closeFullscreenPicker();
+
+    if(mode==="fullscreen"){
+        await fullscreenVideoOnly();
+    }else if(mode==="custom"){
+        await customFullscreenWithQueue();
+    }
+}
+
+// Close when tapping the dark area, but not when tapping the dialog itself.
+document.addEventListener("click",function(e){
+    const p=document.getElementById("fullscreenPicker");
+    if(p && e.target===p)closeFullscreenPicker();
+});
+
+updateFullscreenButton();
 </script>
 
 </body>
@@ -2084,7 +2489,8 @@ max-height:80vh;
 -webkit-overflow-scrolling:touch;
 overscroll-behavior:contain
 }
-.song{display:grid;grid-template-columns:60px minmax(0,1fr) 48px;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #222;cursor:pointer}
+.song{display:grid;grid-template-columns:60px minmax(0,1fr) 48px;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #222;cursor:pointer}.song.has-thumbnail{grid-template-columns:72px minmax(0,1fr) 48px}.song-thumb-wrap{width:72px;height:42px;border-radius:5px;overflow:hidden;background:#222;display:flex;align-items:center;justify-content:center}.song-thumb{width:100%;height:100%;object-fit:cover;display:block}
+
 .song:hover{background:#151515}
 .code{color:#777;font-family:monospace;font-size:13px}
 .info{min-width:0}
@@ -2132,7 +2538,8 @@ min-height:0
 .folder-icon{font-size:16px;width:18px}
 .song-header{padding:10px}
 .song-header h2{font-size:15px}
-.song{grid-template-columns:44px minmax(0,1fr) 40px;gap:6px;padding:7px 7px}
+.song{grid-template-columns:44px minmax(0,1fr) 40px;gap:6px;padding:7px 7px}.song.has-thumbnail{grid-template-columns:58px minmax(0,1fr) 40px}.song-thumb-wrap{width:58px;height:34px}
+
 .title{font-size:13px}
 .artist{font-size:11px}
 .code{font-size:11px}
@@ -2164,9 +2571,9 @@ min-height:0
 <div class="logo">KARAOKE REMOTE</div>
 <div class="header-right">
 <div id="connectionStatus" class="connection-status connected"><span class="connection-dot"></span> <span id="connectionText">CONNECTED</span></div>
-<button class="control" onclick="previousSong()" title="Previous">⏮</button>
-<button id="playButton" class="control play" onclick="togglePlay()" title="Play/Pause">▶</button>
-<button class="control" onclick="nextSong()" title="Next">⏭</button>
+<button class="control" onclick="remotePreviousSong()" title="Previous">⏮</button>
+<button id="playButton" class="control play" onclick="remoteTogglePlay()" title="Play/Pause">▶</button>
+<button class="control" onclick="remoteNextSong()" title="Next">⏭</button>
 <a href="/player" class="player-link" target="_blank">PLAYER</a>
 </div>
 </header>
@@ -2858,14 +3265,16 @@ function renderSongs(clear=true){
         if(existingIds.has(song.id)) continue;
 
         const row=document.createElement("div");
-        row.className="song";
+        const hasThumb=!!(song.youtube && song.thumbnail);
+        row.className="song"+(hasThumb?" has-thumbnail":"");
         row.dataset.songId=song.id;
 
         row.onclick=()=>showSongActionPrompt(song);
 
         row.innerHTML=`
-            <div class="code">${escapeHtml(song.code)}</div>
+            ${hasThumb ? `<div class="song-thumb-wrap"><img class="song-thumb" src="${escapeHtml(song.thumbnail)}" alt=""></div>` : `<div class="code">${escapeHtml(song.code)}</div>`}
             <div class="info">
+                ${hasThumb ? `<div class="code">${escapeHtml(song.code)}</div>` : ``}
                 <div class="title">${escapeHtml(song.title)}</div>
                 <div class="artist">${escapeHtml(song.artist)}</div>
             </div>
@@ -3064,7 +3473,7 @@ async function addSong(id,button=null){
     }
 }
 
-async function nextSong(){
+async function remoteNextSong(){
     try{
         const data=await api("/api/player/next",{method:"POST"});
         if(!data.ok)return;
@@ -3076,7 +3485,7 @@ async function nextSong(){
     }
 }
 
-async function previousSong(){
+async function remotePreviousSong(){
     try{
         const data=await api("/api/player/previous",{method:"POST"});
         if(!data.ok)return;
@@ -3088,7 +3497,7 @@ async function previousSong(){
     }
 }
 
-async function togglePlay(){
+async function remoteTogglePlay(){
     try{
         const data=await api("/api/player/toggle",{method:"POST"});
         if(!data.ok)return;
