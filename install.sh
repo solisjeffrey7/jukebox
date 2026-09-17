@@ -310,7 +310,7 @@ if [[ $- == *i* ]] && command -v python >/dev/null 2>&1; then
                 >/dev/null 2>&1 &
 
             (
-                sleep 1
+                sleep 10
 
                 IP="$(cd "$HOME/jukebox" && python - <<'PY'
 import server_v2
@@ -345,7 +345,7 @@ PY
         echo ""
         echo -e "\033[1;36m2.\033[0m Player:"
         echo "   Browser → ${PLAYER_URL}"
-        echo "   Opens automatically after 1 seconds."
+        echo "   Opens automatically after 10 seconds."
         echo ""
         echo -e "\033[1;36m3.\033[0m Auto Start:"
         echo "   Jukebox starts automatically when Termux opens."
