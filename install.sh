@@ -1,17 +1,14 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
-# ============================================================
-#        🎤 JUKEBOX TERMUX SETUP v10.5.21
-#        WORKING VERSION — SILENT AUTORUN
-# ============================================================
+============================================================
+
+🎤 JUKEBOX TERMUX SETUP v10.5.21
+
+WORKING VERSION — SILENT AUTORUN
+
+============================================================
 
 set -e
-
-# ===================== JUKEBOX SETTINGS =====================
-# Delay before automatically opening the Player in the browser.
-# Change this value only (in seconds) when you want a different delay.
-JUKEBOX_OPEN_DELAY=3
-# =============================================================
 
 J="$HOME/jukebox"
 SERVER="$J/server_v2.py"
@@ -19,7 +16,8 @@ BIN="$HOME/bin"
 LAUNCHER="$BIN/jukebox"
 KARAOKE="$HOME/storage/shared/KARAOKE"
 
-# ---------- COLORS ----------
+---------- COLORS ----------
+
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -40,30 +38,30 @@ echo -e "${X}"
 echo -e "${Y}Checking Termux environment...${X}"
 
 if ! command -v python >/dev/null 2>&1; then
-    echo -e "${R}✘ Python is not installed.${X}"
-    echo
-    echo "Install it with:"
-    echo "pkg install python"
-    exit 1
+echo -e "${R}✘ Python is not installed.${X}"
+echo
+echo "Install it with:"
+echo "pkg install python"
+exit 1
 fi
 
 echo -e "${G}✔ Python found${X}"
 
 if [ ! -d "$HOME/storage/shared" ]; then
-    echo
-    echo -e "${Y}Requesting Termux storage permission...${X}"
-    termux-setup-storage
-    sleep 2
+echo
+echo -e "${Y}Requesting Termux storage permission...${X}"
+termux-setup-storage
+sleep 2
 fi
 
 if [ ! -d "$KARAOKE" ]; then
-    echo
-    echo -e "${Y}KARAOKE folder not found:${X}"
-    echo "$KARAOKE"
-    echo
-    echo "Create it with:"
-    echo "mkdir -p ~/storage/shared/KARAOKE"
-    exit 1
+echo
+echo -e "${Y}KARAOKE folder not found:${X}"
+echo "$KARAOKE"
+echo
+echo "Create it with:"
+echo "mkdir -p ~/storage/shared/KARAOKE"
+exit 1
 fi
 
 echo -e "${G}✔ KARAOKE folder found${X}"
@@ -72,18 +70,18 @@ mkdir -p "$J"
 mkdir -p "$BIN"
 
 if [ ! -f "$SERVER" ]; then
-    if [ -f "$HOME/server_10.5.06.py" ]; then
-        cp "$HOME/server_10.5.06.py" "$SERVER"
-    elif [ -f "./server_10.5.06.py" ]; then
-        cp "./server_10.5.06.py" "$SERVER"
-    else
-        echo
-        echo -e "${R}✘ server_10.5.06.py not found.${X}"
-        echo
-        echo "Place server_10.5.06.py in:"
-        echo "$HOME/"
-        exit 1
-    fi
+if [ -f "$HOME/server_10.5.06.py" ]; then
+cp "$HOME/server_10.5.06.py" "$SERVER"
+elif [ -f "./server_10.5.06.py" ]; then
+cp "./server_10.5.06.py" "$SERVER"
+else
+echo
+echo -e "${R}✘ server_10.5.06.py not found.${X}"
+echo
+echo "Place server_10.5.06.py in:"
+echo "$HOME/"
+exit 1
+fi
 fi
 
 echo -e "${G}✔ Jukebox server installed${X}"
@@ -93,9 +91,11 @@ echo -e "${Y}Checking Jukebox server...${X}"
 python -m py_compile "$SERVER"
 echo -e "${G}✔ Server syntax OK${X}"
 
-# ============================================================
-#                 JUKEBOX LAUNCHER
-# ============================================================
+============================================================
+
+JUKEBOX LAUNCHER
+
+============================================================
 
 cat > "$LAUNCHER" <<'LAUNCHER_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
@@ -104,9 +104,10 @@ J="$HOME/jukebox"
 SERVER="$J/server_v2.py"
 
 show_already_running() {
-    cd "$J" || return 1
+cd "$J" || return 1
 
-    python - <<'PY'
+python - <<'PY'
+
 import server_v2
 
 ip = server_v2.get_local_ip()
@@ -118,7 +119,8 @@ print()
 print("\033[1;36m🎤 JUKEBOX ALREADY RUNNING\033[0m")
 print()
 
-# Manual `jukebox` shows Player + Remote QR.
+Manual jukebox shows Player + Remote QR.
+
 server_v2.print_startup_ui(player, remote)
 
 print()
@@ -129,7 +131,7 @@ print("   jukebox")
 print()
 print("\033[1;36m2.\033[0m Player:")
 print(f"   Browser → {player}")
-print("   Opens automatically after ${AUTO_OPEN_DELAY} second(s).")
+print("   Opens automatically after 10 seconds.")
 print()
 print("\033[1;36m3.\033[0m Auto Start:")
 print("   Jukebox starts automatically when Termux opens.")
@@ -148,25 +150,27 @@ PY
 }
 
 if pgrep -f "$SERVER" >/dev/null 2>&1; then
-    show_already_running
+show_already_running
 
-    IP="$(cd "$J" && python - <<'PY'
+IP="$(cd "$J" && python - <<'PY'
+
 import server_v2
 print(server_v2.get_local_ip())
 PY
 )"
 
-    if [ -n "$IP" ]; then
-        (
-            sleep "$AUTO_OPEN_DELAY"
-            am start \
-                -a android.intent.action.VIEW \
-                -d "http://$IP:8080/player" \
-                >/dev/null 2>&1
-        ) >/dev/null 2>&1 &
-    fi
+if [ -n "$IP" ]; then  
+    (  
+        sleep 10  
+        am start \  
+            -a android.intent.action.VIEW \  
+            -d "http://$IP:8080/player" \  
+            >/dev/null 2>&1  
+    ) >/dev/null 2>&1 &  
+fi  
 
-    exit 0
+exit 0
+
 fi
 
 cd "$J" || exit 1
@@ -176,206 +180,229 @@ LAUNCHER_EOF
 chmod +x "$LAUNCHER"
 echo -e "${G}✔ Jukebox launcher created${X}"
 
-# ============================================================
-# REMOVE OLD JUKEBOX BLOCKS ONLY
-# ============================================================
+============================================================
+
+REMOVE OLD JUKEBOX BLOCKS ONLY
+
+============================================================
 
 remove_jukebox_block() {
-    local FILE="$1"
+local FILE="$1"
 
-    [ -f "$FILE" ] || touch "$FILE"
+[ -f "$FILE" ] || touch "$FILE"  
 
-    sed -i '/^[[:space:]]*# >>> JUKEBOX .* >>>[[:space:]]*$/,/^[[:space:]]*# <<< JUKEBOX .* <<<[[:space:]]*$/d' "$FILE"
+sed -i '/^[[:space:]]*# >>> JUKEBOX .* >>>[[:space:]]*$/,/^[[:space:]]*# <<< JUKEBOX .* <<<[[:space:]]*$/d' "$FILE"  
 
-    sed -i '/^[[:space:]]*alias jukebox=.*$/d' "$FILE"
+sed -i '/^[[:space:]]*alias jukebox=.*$/d' "$FILE"
+
 }
 
 remove_jukebox_block "$HOME/.zshrc"
 remove_jukebox_block "$HOME/.bashrc"
 
-# ============================================================
-# ZSHRC — AUTO START + ACTUAL IP IN GUIDE
-# ============================================================
+============================================================
+
+ZSHRC — AUTO START + ACTUAL IP IN GUIDE
+
+============================================================
 
 cat >> "$HOME/.zshrc" <<'ZSH_EOF'
 
-# >>> JUKEBOX 10.5.21 >>>
+>>> JUKEBOX 10.5.21 >>>
+
 export PATH="$HOME/bin:$PATH"
 alias jukebox="$HOME/bin/jukebox"
 
-# Silent AutoRun
+Silent AutoRun
+
 if [[ -o interactive ]] && command -v python >/dev/null 2>&1; then
 
-    if [[ -f "$HOME/jukebox/server_v2.py" ]]; then
+if [[ -f "$HOME/jukebox/server_v2.py" ]]; then  
 
-        if pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then
+    if pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then  
 
-            echo ""
-            echo -e "\033[1;36m🎤 JUKEBOX ALREADY RUNNING\033[0m"
-            echo ""
+        echo ""  
+        echo -e "\033[1;36m🎤 JUKEBOX ALREADY RUNNING\033[0m"  
+        echo ""  
 
-        else
+    else  
 
-            echo ""
-            echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"
-            echo ""
+        echo ""  
+        echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"  
+        echo ""  
 
-            cd "$HOME/jukebox"
+        cd "$HOME/jukebox"  
 
-            nohup python -u "$HOME/jukebox/server_v2.py" \
-                >/dev/null 2>&1 &
+        nohup python -u "$HOME/jukebox/server_v2.py" \  
+            >/dev/null 2>&1 &  
 
-            (
-                sleep "$AUTO_OPEN_DELAY"
+        (  
+            sleep 10  
 
-                IP="$(cd "$HOME/jukebox" && python - <<'PY'
+            IP="$(cd "$HOME/jukebox" && python - <<'PY'
+
 import server_v2
 print(server_v2.get_local_ip())
 PY
 )"
 
-                if [[ -n "$IP" ]]; then
-                    am start \
-                        -a android.intent.action.VIEW \
-                        -d "http://$IP:8080/player" \
-                        >/dev/null 2>&1
-                fi
+if [[ -n "$IP" ]]; then  
+                am start \  
+                    -a android.intent.action.VIEW \  
+                    -d "http://$IP:8080/player" \  
+                    >/dev/null 2>&1  
+            fi  
 
-            ) >/dev/null 2>&1 &
+        ) >/dev/null 2>&1 &  
 
-        fi
+    fi  
 
-        # Get actual server IP for the guide.
-        IP="$(cd "$HOME/jukebox" && python - <<'PY'
+    # Get actual server IP for the guide.  
+    IP="$(cd "$HOME/jukebox" && python - <<'PY'
+
 import server_v2
 print(server_v2.get_local_ip())
 PY
 )"
 
-        PLAYER_URL="http://${IP}:8080/player"
+PLAYER_URL="http://${IP}:8080/player"  
 
-        echo -e "\033[1;37m━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\033[0m"
-        echo ""
-        echo -e "\033[1;36m1.\033[0m Start manually:"
-        echo "   jukebox"
-        echo ""
-        echo -e "\033[1;36m2.\033[0m Player:"
-        echo "   Browser → ${PLAYER_URL}"
-        echo "   Opens automatically after ${AUTO_OPEN_DELAY} second(s)."
-        echo ""
-        echo -e "\033[1;36m3.\033[0m Auto Start:"
-        echo "   Jukebox starts automatically when Termux opens."
-        echo ""
-        echo -e "\033[1;36m4.\033[0m Already running:"
-        echo "   No second server."
-        echo ""
-        echo -e "\033[1;36m5.\033[0m Stop Jukebox:"
-        echo "   pkill -f server_v2.py"
-        echo ""
-        echo -e "\033[1;36m6.\033[0m Server address:"
-        echo "   ${PLAYER_URL}"
-        echo ""
-        echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-        echo ""
+    echo -e "\033[1;37m━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\033[0m"  
+    echo ""  
+    echo -e "\033[1;36m1.\033[0m Start manually:"  
+    echo "   jukebox"  
+    echo ""  
+    echo -e "\033[1;36m2.\033[0m Player:"  
+    echo "   Browser → ${PLAYER_URL}"  
+    echo "   Opens automatically after 10 seconds."  
+    echo ""  
+    echo -e "\033[1;36m3.\033[0m Auto Start:"  
+    echo "   Jukebox starts automatically when Termux opens."  
+    echo ""  
+    echo -e "\033[1;36m4.\033[0m Already running:"  
+    echo "   No second server."  
+    echo ""  
+    echo -e "\033[1;36m5.\033[0m Stop Jukebox:"  
+    echo "   pkill -f server_v2.py"  
+    echo ""  
+    echo -e "\033[1;36m6.\033[0m Server address:"  
+    echo "   ${PLAYER_URL}"  
+    echo ""  
+    echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"  
+    echo ""  
 
-    fi
 fi
-# <<< JUKEBOX 10.5.21 <<<
+
+fi
+
+<<< JUKEBOX 10.5.21 <<<
+
 ZSH_EOF
 
-# ============================================================
-# BASHRC — SAME AUTO START + ACTUAL IP IN GUIDE
-# ============================================================
+============================================================
+
+BASHRC — SAME AUTO START + ACTUAL IP IN GUIDE
+
+============================================================
 
 cat >> "$HOME/.bashrc" <<'BASH_EOF'
 
-# >>> JUKEBOX 10.5.21 >>>
+>>> JUKEBOX 10.5.21 >>>
+
 export PATH="$HOME/bin:$PATH"
 alias jukebox="$HOME/bin/jukebox"
 
-# Silent AutoRun
-if [[ $- == *i* ]] && command -v python >/dev/null 2>&1; then
+Silent AutoRun
 
-    if [[ -f "$HOME/jukebox/server_v2.py" ]]; then
+if [[ $- == i ]] && command -v python >/dev/null 2>&1; then
 
-        if pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then
+if [[ -f "$HOME/jukebox/server_v2.py" ]]; then  
 
-            echo ""
-            echo -e "\033[1;36m🎤 JUKEBOX ALREADY RUNNING\033[0m"
-            echo ""
+    if pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then  
 
-        else
+        echo ""  
+        echo -e "\033[1;36m🎤 JUKEBOX ALREADY RUNNING\033[0m"  
+        echo ""  
 
-            echo ""
-            echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"
-            echo ""
+    else  
 
-            cd "$HOME/jukebox"
+        echo ""  
+        echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"  
+        echo ""  
 
-            nohup python -u "$HOME/jukebox/server_v2.py" \
-                >/dev/null 2>&1 &
+        cd "$HOME/jukebox"  
 
-            (
-                sleep "$AUTO_OPEN_DELAY"
+        nohup python -u "$HOME/jukebox/server_v2.py" \  
+            >/dev/null 2>&1 &  
 
-                IP="$(cd "$HOME/jukebox" && python - <<'PY'
+        (  
+            sleep 10  
+
+            IP="$(cd "$HOME/jukebox" && python - <<'PY'
+
 import server_v2
 print(server_v2.get_local_ip())
 PY
 )"
 
-                if [[ -n "$IP" ]]; then
-                    am start \
-                        -a android.intent.action.VIEW \
-                        -d "http://$IP:8080/player" \
-                        >/dev/null 2>&1
-                fi
+if [[ -n "$IP" ]]; then  
+                am start \  
+                    -a android.intent.action.VIEW \  
+                    -d "http://$IP:8080/player" \  
+                    >/dev/null 2>&1  
+            fi  
 
-            ) >/dev/null 2>&1 &
+        ) >/dev/null 2>&1 &  
 
-        fi
+    fi  
 
-        # Get actual server IP for the guide.
-        IP="$(cd "$HOME/jukebox" && python - <<'PY'
+    # Get actual server IP for the guide.  
+    IP="$(cd "$HOME/jukebox" && python - <<'PY'
+
 import server_v2
 print(server_v2.get_local_ip())
 PY
 )"
 
-        PLAYER_URL="http://${IP}:8080/player"
+PLAYER_URL="http://${IP}:8080/player"  
 
-        echo -e "\033[1;37m━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\033[0m"
-        echo ""
-        echo -e "\033[1;36m1.\033[0m Start manually:"
-        echo "   jukebox"
-        echo ""
-        echo -e "\033[1;36m2.\033[0m Player:"
-        echo "   Browser → ${PLAYER_URL}"
-        echo "   Opens automatically after ${AUTO_OPEN_DELAY} second(s)."
-        echo ""
-        echo -e "\033[1;36m3.\033[0m Auto Start:"
-        echo "   Jukebox starts automatically when Termux opens."
-        echo ""
-        echo -e "\033[1;36m4.\033[0m Already running:"
-        echo "   No second server."
-        echo ""
-        echo -e "\033[1;36m5.\033[0m Stop Jukebox:"
-        echo "   pkill -f server_v2.py"
-        echo ""
-        echo -e "\033[1;36m6.\033[0m Server address:"
-        echo "   ${PLAYER_URL}"
-        echo ""
-        echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-        echo ""
+    echo -e "\033[1;37m━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\033[0m"  
+    echo ""  
+    echo -e "\033[1;36m1.\033[0m Start manually:"  
+    echo "   jukebox"  
+    echo ""  
+    echo -e "\033[1;36m2.\033[0m Player:"  
+    echo "   Browser → ${PLAYER_URL}"  
+    echo "   Opens automatically after 10 seconds."  
+    echo ""  
+    echo -e "\033[1;36m3.\033[0m Auto Start:"  
+    echo "   Jukebox starts automatically when Termux opens."  
+    echo ""  
+    echo -e "\033[1;36m4.\033[0m Already running:"  
+    echo "   No second server."  
+    echo ""  
+    echo -e "\033[1;36m5.\033[0m Stop Jukebox:"  
+    echo "   pkill -f server_v2.py"  
+    echo ""  
+    echo -e "\033[1;36m6.\033[0m Server address:"  
+    echo "   ${PLAYER_URL}"  
+    echo ""  
+    echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"  
+    echo ""  
 
-    fi
 fi
-# <<< JUKEBOX 10.5.21 <<<
+
+fi
+
+<<< JUKEBOX 10.5.21 <<<
+
 BASH_EOF
 
-# ============================================================
-# FINISH
-# ============================================================
+============================================================
+
+FINISH
+
+============================================================
 
 echo
 echo -e "${G}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${X}"
