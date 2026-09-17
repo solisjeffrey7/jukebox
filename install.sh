@@ -5,17 +5,22 @@ REPO="https://github.com/solisjeffrey7/jukebox.git"
 DIR="$HOME/jukebox"
 
 echo "======================================"
-echo "       JUKEBOX MINIMAL INSTALLER"
+echo "     JUKEBOX 10.5.07 INSTALLER"
 echo "======================================"
 
+# Git is needed only for cloning/updating the repository.
+if ! command -v git >/dev/null 2>&1; then
+    pkg update -y
+    pkg install -y git
+fi
+
 if [ -d "$DIR/.git" ]; then
-    echo "Updating existing Jukebox..."
+    echo "Updating Jukebox..."
     cd "$DIR"
     git fetch origin
     git reset --hard origin/main
 else
     echo "Cloning Jukebox..."
-    pkg install -y git
     git clone "$REPO" "$DIR"
 fi
 
@@ -23,13 +28,10 @@ cd "$DIR"
 chmod +x install-termux.sh run.sh
 ./install-termux.sh
 
+# Make the command available immediately in this shell.
 export PATH="$HOME/bin:$PATH"
 
 echo ""
-echo "======================================"
-echo "       INSTALL COMPLETE"
-echo "======================================"
-echo ""
+echo "Jukebox installed."
 echo "Run: jukebox"
-echo "Auto-run: ENABLED"
-echo ""
+echo "Close/reopen Termux for automatic startup."
