@@ -7,6 +7,12 @@
 
 set -e
 
+# ===================== JUKEBOX SETTINGS =====================
+# Delay before automatically opening the Player in the browser.
+# Change this value only (in seconds) when you want a different delay.
+JUKEBOX_OPEN_DELAY=1
+# =============================================================
+
 J="$HOME/jukebox"
 SERVER="$J/server_v2.py"
 BIN="$HOME/bin"
@@ -123,7 +129,7 @@ print("   jukebox")
 print()
 print("\033[1;36m2.\033[0m Player:")
 print(f"   Browser → {player}")
-print("   Opens automatically after 10 seconds.")
+print("   Opens automatically after ${AUTO_OPEN_DELAY} second(s).")
 print()
 print("\033[1;36m3.\033[0m Auto Start:")
 print("   Jukebox starts automatically when Termux opens.")
@@ -152,7 +158,7 @@ PY
 
     if [ -n "$IP" ]; then
         (
-            sleep 10
+            sleep "$AUTO_OPEN_DELAY"
             am start \
                 -a android.intent.action.VIEW \
                 -d "http://$IP:8080/player" \
@@ -220,7 +226,7 @@ if [[ -o interactive ]] && command -v python >/dev/null 2>&1; then
                 >/dev/null 2>&1 &
 
             (
-                sleep 10
+                sleep "$AUTO_OPEN_DELAY"
 
                 IP="$(cd "$HOME/jukebox" && python - <<'PY'
 import server_v2
@@ -255,7 +261,7 @@ PY
         echo ""
         echo -e "\033[1;36m2.\033[0m Player:"
         echo "   Browser → ${PLAYER_URL}"
-        echo "   Opens automatically after 10 seconds."
+        echo "   Opens automatically after ${AUTO_OPEN_DELAY} second(s)."
         echo ""
         echo -e "\033[1;36m3.\033[0m Auto Start:"
         echo "   Jukebox starts automatically when Termux opens."
@@ -310,7 +316,7 @@ if [[ $- == *i* ]] && command -v python >/dev/null 2>&1; then
                 >/dev/null 2>&1 &
 
             (
-                sleep 10
+                sleep "$AUTO_OPEN_DELAY"
 
                 IP="$(cd "$HOME/jukebox" && python - <<'PY'
 import server_v2
@@ -345,7 +351,7 @@ PY
         echo ""
         echo -e "\033[1;36m2.\033[0m Player:"
         echo "   Browser → ${PLAYER_URL}"
-        echo "   Opens automatically after 10 seconds."
+        echo "   Opens automatically after ${AUTO_OPEN_DELAY} second(s)."
         echo ""
         echo -e "\033[1;36m3.\033[0m Auto Start:"
         echo "   Jukebox starts automatically when Termux opens."
