@@ -115,6 +115,28 @@ server_v2.print_startup_ui(
 )
 
 print()
+print("\033[1;37m━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\033[0m")
+print()
+print("\033[1;36m1.\033[0m Start manually:")
+print("   jukebox")
+print()
+print("\033[1;36m2.\033[0m Player:")
+print("   Browser → http://IP:8080/player")
+print("   Opens automatically after 10 seconds.")
+print()
+print("\033[1;36m3.\033[0m Auto Start:")
+print("   Jukebox starts automatically when Termux opens.")
+print()
+print("\033[1;36m4.\033[0m Already running:")
+print("   No second server.")
+print()
+print("\033[1;36m5.\033[0m Stop Jukebox:")
+print("   pkill -f server_v2.py")
+print()
+print("\033[1;36m6.\033[0m Server address:")
+print("   http://IP:8080/player")
+print()
+print("\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m")
 PY
 }
 
