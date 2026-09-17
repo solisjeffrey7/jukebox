@@ -2,20 +2,19 @@
 set -e
 
 echo "======================================"
-echo "       JUKEBOX TERMUX SETUP"
+echo "     JUKEBOX MINIMAL TERMUX SETUP"
 echo "======================================"
 
+# Only packages needed by server_v2.py / Jukebox operation.
 pkg update -y
-pkg upgrade -y
-
-pkg install -y python git ffmpeg curl wget jq openssl
+pkg install -y python ffmpeg
 
 cd "$HOME/jukebox"
 
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-chmod +x run.sh server_v2.py
+chmod +x run.sh
 
 mkdir -p "$HOME/bin"
 
@@ -51,12 +50,14 @@ fi
 EOF
 done
 
+python -m py_compile server_v2.py
+
 echo ""
 echo "======================================"
 echo "       JUKEBOX READY"
 echo "======================================"
 echo ""
-echo "Manual command: jukebox"
+echo "Command : jukebox"
 echo "Auto-run: ENABLED"
 echo ""
 echo "Close and reopen Termux."

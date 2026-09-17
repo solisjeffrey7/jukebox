@@ -5,29 +5,23 @@ REPO="https://github.com/solisjeffrey7/jukebox.git"
 DIR="$HOME/jukebox"
 
 echo "======================================"
-echo "       JUKEBOX INSTALLER"
+echo "       JUKEBOX MINIMAL INSTALLER"
 echo "======================================"
 
 if [ -d "$DIR/.git" ]; then
-    echo "[1/4] Updating existing Jukebox..."
+    echo "Updating existing Jukebox..."
     cd "$DIR"
     git fetch origin
     git reset --hard origin/main
 else
-    echo "[1/4] Cloning Jukebox..."
+    echo "Cloning Jukebox..."
+    pkg install -y git
     git clone "$REPO" "$DIR"
 fi
 
 cd "$DIR"
-
-echo "[2/4] Installing requirements..."
 chmod +x install-termux.sh run.sh
 ./install-termux.sh
-
-echo "[3/4] Testing server syntax..."
-python -m py_compile server_v2.py
-
-echo "[4/4] Done."
 
 export PATH="$HOME/bin:$PATH"
 
@@ -36,8 +30,6 @@ echo "======================================"
 echo "       INSTALL COMPLETE"
 echo "======================================"
 echo ""
-echo "Run now:"
-echo "  jukebox"
-echo ""
-echo "Or reopen Termux for AUTO-RUN."
+echo "Run: jukebox"
+echo "Auto-run: ENABLED"
 echo ""
