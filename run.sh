@@ -1,5 +1,4 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
-cd "$(dirname "$0")"
-
-python jukebox-server.py
+cd "$HOME/jukebox"
+exec python server_v2.py

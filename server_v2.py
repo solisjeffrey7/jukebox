@@ -23,7 +23,7 @@ import urllib.request
 import urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
-JUKEBOX_VERSION = "10.5.04"
+JUKEBOX_VERSION = "10.5.06"
 
 
 # ============================================================
@@ -60,6 +60,41 @@ def _valid_jukebox_key_bytes(data):
         hashlib.sha256(value.encode("utf-8")).hexdigest(),
         legacy_hash
     )
+
+# ============================================================
+# INTERNET STATUS
+# ============================================================
+_internet_status_lock = threading.RLock()
+_internet_status = {"online": True, "checked": 0.0}
+
+def check_internet_connection(force=False):
+    """Check external Internet access without affecting local playback."""
+    now = time.time()
+    with _internet_status_lock:
+        if not force and now - _internet_status["checked"] < 10:
+            return bool(_internet_status["online"])
+
+    online = False
+    for url in (
+        "https://www.gstatic.com/generate_204",
+        "https://www.google.com/generate_204",
+    ):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": f"KaraokeJukebox/{JUKEBOX_VERSION}"}
+            )
+            with urllib.request.urlopen(req, timeout=2.5) as response:
+                if 200 <= response.status < 400:
+                    online = True
+                    break
+        except Exception:
+            pass
+
+    with _internet_status_lock:
+        _internet_status["online"] = online
+        _internet_status["checked"] = time.time()
+    return online
 
 def _find_jukebox_key():
     """Search KARAOKE recursively, including keys stored inside ZIP files."""
@@ -2375,6 +2410,10 @@ document.addEventListener("click",function(e){
 updateFullscreenButton();
 </script>
 
+<script>
+refreshInternetStatus();
+internetStatusTimer=setInterval(refreshInternetStatus,15000);
+</script>
 </body>
 </html>
 """
@@ -2589,7 +2628,7 @@ background:#090909
 .song-header h2{margin:0;font-size:18px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .song-count{color:#888;font-size:12px;white-space:nowrap}
 .search{width:100%;padding:12px;background:#171717;color:#fff;border:1px solid #333;border-radius:7px;outline:none;font-size:15px}
-.youtube-search-section{width:100%;padding-top:2px;margin-top:2px;display:none}.youtube-process{margin-top:7px;padding:8px 10px;color:#aaa;font-size:11px;font-weight:700;background:#111;border:1px solid #292929;border-radius:7px;display:none;line-height:1.35}.youtube-process.active{display:block}.youtube-process .yt-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#888;margin-right:6px;animation:ytpulse 1s infinite}.youtube-process.done{display:block;color:#aaa}.youtube-results{border-top:1px solid #292929;margin-top:4px;padding-top:10px}.youtube-load-wrap{padding:6px 7px;margin:5px 0 0;background:#090909;border-top:1px solid #292929;border-bottom:1px solid #292929;position:relative;z-index:2;box-shadow:none;flex:0 0 auto}.youtube-load-button{display:block;width:100%;padding:9px 12px;border:1px solid #3a3a3a;border-radius:8px;background:#171717;color:#fff;font-size:13px;font-weight:900;letter-spacing:.3px;cursor:pointer}.youtube-load-button:hover{background:#222}.youtube-load-button:active{transform:scale(.99)}.youtube-load-button:disabled{opacity:.45;cursor:not-allowed}@keyframes ytpulse{0%,100%{opacity:.3}50%{opacity:1}}
+.youtube-search-section{width:100%;padding-top:2px;margin-top:2px;display:none}.youtube-process.offline{display:block!important;color:#aaa}.youtube-process{margin-top:7px;padding:8px 10px;color:#aaa;font-size:11px;font-weight:700;background:#111;border:1px solid #292929;border-radius:7px;display:none;line-height:1.35}.youtube-process.active{display:block}.youtube-process .yt-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#888;margin-right:6px;animation:ytpulse 1s infinite}.youtube-process.done{display:block;color:#aaa}.youtube-results{border-top:1px solid #292929;margin-top:4px;padding-top:10px}.youtube-load-wrap{padding:6px 7px;margin:5px 0 0;background:#090909;border-top:1px solid #292929;border-bottom:1px solid #292929;position:relative;z-index:2;box-shadow:none;flex:0 0 auto}.youtube-load-button{display:block;width:100%;padding:9px 12px;border:1px solid #3a3a3a;border-radius:8px;background:#171717;color:#fff;font-size:13px;font-weight:900;letter-spacing:.3px;cursor:pointer}.youtube-load-button:hover{background:#222}.youtube-load-button:active{transform:scale(.99)}.youtube-load-button:disabled{opacity:.45;cursor:not-allowed}@keyframes ytpulse{0%,100%{opacity:.3}50%{opacity:1}}
 .youtube-heading{font-size:12px;font-weight:900;color:#f44;margin-bottom:6px;letter-spacing:.5px}
 .youtube-song{display:grid;grid-template-columns:96px minmax(0,1fr) 42px;gap:8px;align-items:center;padding:8px;border:1px solid #252525;border-radius:7px;background:#111;margin-bottom:6px;cursor:pointer}.youtube-info{min-width:0}.youtube-test-state{font-size:9px;font-weight:800;margin-top:4px;letter-spacing:.2px}.youtube-test-state.testing{color:#777}.youtube-test-state.playable{color:#8bc34a}.youtube-test-state.timeout{color:#c5a85b}.youtube-song.youtube-removing{opacity:.15;transform:scale(.98);transition:opacity .18s ease,transform .18s ease}
 .youtube-thumb{width:96px;height:54px;object-fit:cover;background:#222;border-radius:4px}
@@ -2746,6 +2785,59 @@ let refreshInFlight=false;
 
 let connectionFailCount=0;
 let statusPollInFlight=false;
+let internetOnline=true;
+let internetStatusTimer=null;
+
+function applyInternetStatus(online){
+    internetOnline=!!online;
+
+    const loadItem=document.getElementById("youtubeLoadItem");
+    const section=document.getElementById("youtubeSearchSection");
+    const process=document.getElementById("youtubeProcess");
+    const box=document.getElementById("youtubeResults");
+
+    // Only YouTube UI is hidden. Local songs/player are untouched.
+    if(!internetOnline){
+        if(loadItem) loadItem.style.display="none";
+        if(section) section.style.display="none";
+        if(box) box.style.display="none";
+        if(process){
+            process.className="youtube-process offline";
+            process.textContent="⚠ OFFLINE — YouTube unavailable";
+            process.style.display="block";
+        }
+
+        // Hide only the Saved Links folder.
+        document.querySelectorAll("#folderList .folder").forEach(function(btn){
+            const name=btn.querySelector(".folder-name");
+            if(name && name.textContent.trim().toUpperCase().startsWith("SAVED LINKS")){
+                btn.style.display="none";
+            }
+        });
+    }else{
+        if(loadItem) loadItem.style.display="block";
+        if(process && process.classList.contains("offline")){
+            process.className="youtube-process";
+            process.textContent="";
+            process.style.display="none";
+        }
+        // Do not reload the song list here. This prevents local songs from disappearing.
+        // The normal songs/folders request will reflect the current Internet state.
+    }
+}
+
+async function refreshInternetStatus(){
+    try{
+        const r=await fetch("/api/internet-status",{cache:"no-store"});
+        const data=await r.json();
+        applyInternetStatus(data.online === true);
+    }catch(e){
+        // A failed status request means the local server itself is unreachable.
+        // Do not clear the current local song list.
+    }
+}
+
+
 let reconnectInFlight=false;
 
 (function loadYouTubeVerifierAPI(){
@@ -3039,6 +3131,15 @@ async function verifyYouTubeResults(results,process,box){
 
 async function loadYouTubeResults(query){
     const section=document.getElementById("youtubeSearchSection");
+    if(!internetOnline){
+        const process=document.getElementById("youtubeProcess");
+        if(process){
+            process.className="youtube-process offline";
+            process.textContent="⚠ OFFLINE — YouTube unavailable";
+            process.style.display="block";
+        }
+        return;
+    }
     const box=document.getElementById("youtubeResults");
     const process=document.getElementById("youtubeProcess");
     if(!section || !box)return;
@@ -3156,6 +3257,9 @@ async function loadSongs(reset=true){
         });
 
         const data=await api("/api/songs?"+params.toString());
+        if(typeof data.internet_online==="boolean"){
+            applyInternetStatus(data.internet_online);
+        }
 
         if(reset){
             songs=[];
@@ -3247,6 +3351,7 @@ function renderFolders(folderData=[]){
     for(const item of folderData){
         const folder=item.path;
         const count=Number(item.count||0);
+        if(!internetOnline && folder==="@SAVED_LINKS@") return;
 
         const button=document.createElement("button");
         button.className="folder"+(selectedFolder===folder?" active":"");
@@ -3276,7 +3381,17 @@ function renderFolders(folderData=[]){
 
 document.getElementById("loadYouTubeButton").addEventListener("click",()=>{
     const query=document.getElementById("search").value.trim();
-    if(!query || youtubeSearchInFlight)return;
+    if(!query || youtubeSearchInFlight || !internetOnline){
+        if(!internetOnline){
+            const process=document.getElementById("youtubeProcess");
+            if(process){
+                process.className="youtube-process offline";
+                process.textContent="⚠ OFFLINE — YouTube unavailable";
+                process.style.display="block";
+            }
+        }
+        return;
+    }
 
     youtubeLoadRequested=true;
     const section=document.getElementById("youtubeSearchSection");
@@ -3336,7 +3451,7 @@ document.getElementById("search")
 
 document.getElementById("search").addEventListener("input",()=>{
     const button=document.getElementById("loadYouTubeButton");
-    if(button) button.disabled=!document.getElementById("search").value.trim();
+    if(button) button.disabled=!document.getElementById("search").value.trim() || !internetOnline;
 });
 
 // Also support form/programmatic submit if the search field is inside a form.
@@ -4079,7 +4194,14 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             self.send_svg(svg)
             return
 
+        if path=="/api/internet-status":
+            self.send_json({"ok":True,"online":check_internet_connection()})
+            return
+
         if path=="/api/youtube-search":
+            if not check_internet_connection():
+                self.send_json({"ok":False,"offline":True,"message":"OFFLINE — YouTube unavailable"},503)
+                return
             query=urllib.parse.parse_qs(parsed.query).get("q",[""])[0].strip()
             if not query:
                 self.send_json({"ok":True,"results":[]})
@@ -4113,13 +4235,14 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             limit=max(1,min(limit,100))
             search=query.get("search",[""])[0].strip().lower()
             folder=query.get("folder",[""])[0].strip().replace("\\","/")
+            internet_online=check_internet_connection()
 
             with state_lock:
                 source=songs[:]
                 index=search_index.copy()
 
             if folder==SAVED_LINKS_FOLDER:
-                source=get_saved_youtube_songs()
+                source=get_saved_youtube_songs() if internet_online else []
             elif folder:
                 source=[
                     song for song in source
@@ -4128,7 +4251,7 @@ class JukeboxHandler(BaseHTTPRequestHandler):
 
             # ALL SONGS includes permanently saved playable YouTube links.
             # They are also searchable from the same ALL SONGS list.
-            if folder=="":
+            if folder=="" and internet_online:
                 existing_ids={song["id"] for song in source}
                 for saved_song in get_saved_youtube_songs():
                     if saved_song["id"] not in existing_ids:
@@ -4154,7 +4277,7 @@ class JukeboxHandler(BaseHTTPRequestHandler):
                 all_source=songs[:]
 
             if search:
-                if folder!=SAVED_LINKS_FOLDER:
+                if internet_online and folder!=SAVED_LINKS_FOLDER:
                     existing_ids={song["id"] for song in all_source}
                     for saved_song in get_saved_youtube_songs():
                         if saved_song["id"] not in existing_ids:
@@ -4171,9 +4294,9 @@ class JukeboxHandler(BaseHTTPRequestHandler):
                 if folder_path:
                     folder_counts[folder_path]=folder_counts.get(folder_path,0)+1
 
-            saved_count=len(get_saved_youtube_songs())
-            # Always expose the Saved Links folder so it is visible in the Remote.
-            folder_counts[SAVED_LINKS_FOLDER]=saved_count
+            saved_count=len(get_saved_youtube_songs()) if internet_online else 0
+            if internet_online:
+                folder_counts[SAVED_LINKS_FOLDER]=saved_count
 
             folders=[
                 {"path":path,"count":count}
@@ -4190,7 +4313,8 @@ class JukeboxHandler(BaseHTTPRequestHandler):
                 "limit":limit,
                 "has_more":has_more,
                 "folders":folders,
-                "songs":[public_song(song) for song in page]
+                "songs":[public_song(song) for song in page],
+                "internet_online":internet_online
             })
             return
 
@@ -4339,6 +4463,9 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             data={}
 
         if path=="/api/youtube-save-playable":
+            if not check_internet_connection():
+                self.send_json({"ok":False,"offline":True,"message":"OFFLINE — Saved Links unavailable"},503)
+                return
             try:
                 video_id=str(data.get("youtube_id","")).strip()
                 title=str(data.get("title","")).strip()
