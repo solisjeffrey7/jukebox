@@ -1,10 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
 
-# ==============================
-# JUKEBOX 10.5.09 TERMUX SETUP
-# ==============================
-
 RESET='\033[0m'
 BOLD='\033[1m'
 GREEN='\033[1;32m'
@@ -22,7 +18,7 @@ clear
 echo -e "${CYAN}${BOLD}"
 echo "╔══════════════════════════════════════════╗"
 echo "║        🎤 JUKEBOX TERMUX SETUP 🎤       ║"
-echo "║                v10.5.09                 ║"
+echo "║                v10.5.10                 ║"
 echo "╚══════════════════════════════════════════╝"
 echo -e "${RESET}"
 
@@ -35,7 +31,7 @@ termux-setup-storage || true
 sleep 2
 ok "Storage permission requested."
 if [ ! -d "$HOME/storage/shared" ]; then
-    warn "Storage is not available yet. Tap ALLOW if Android asks."
+    warn "Tap ALLOW when Android asks for storage permission."
 fi
 
 step 2 "Installing required Termux packages..."
@@ -54,7 +50,7 @@ if [ -d "$HOME/storage/shared" ]; then
     ok "KARAOKE folder ready."
     echo -e "      ${CYAN}$KARAOKE${RESET}"
 else
-    warn "Run termux-setup-storage after granting permission."
+    warn "Storage permission still unavailable."
 fi
 
 step 5 "Installing Jukebox command..."
@@ -66,7 +62,7 @@ cat > "$BIN/jukebox" <<'EOF'
 J="$HOME/jukebox"
 PIDFILE="$J/.jukebox.pid"
 
-# Prevent a second instance from causing 'Address already in use'.
+# Do not start a second Jukebox.
 if [ -f "$PIDFILE" ]; then
     PID="$(cat "$PIDFILE" 2>/dev/null || true)"
     if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
@@ -84,49 +80,57 @@ fi
 cd "$J" || exit 1
 echo $$ > "$PIDFILE"
 trap 'rm -f "$PIDFILE"' EXIT
+
+# VISIBLE foreground startup.
 exec "$J/run.sh"
 EOF
 chmod +x "$BIN/jukebox"
 ok "Command installed: jukebox"
 
-step 6 "Configuring Bash + Zsh..."
+step 6 "Cleaning old AutoRun settings..."
+# Remove old Jukebox blocks from previous installer versions.
 for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
     touch "$RC"
+    sed -i '/# JUKEBOX PATH START/,/# JUKEBOX PATH END/d' "$RC"
+    sed -i '/# JUKEBOX AUTORUN START/,/# JUKEBOX AUTORUN END/d' "$RC"
+    sed -i '/# >>> JUKEBOX 10.5.08 >>>/,/# <<< JUKEBOX 10.5.08 <<</d' "$RC"
     sed -i '/# >>> JUKEBOX 10.5.09 >>>/,/# <<< JUKEBOX 10.5.09 <<</d' "$RC"
+    sed -i '/# >>> JUKEBOX 10.5.10 >>>/,/# <<< JUKEBOX 10.5.10 <<</d' "$RC"
 
     cat >> "$RC" <<'EOF'
 
-# >>> JUKEBOX 10.5.09 >>>
+# >>> JUKEBOX 10.5.10 >>>
 export PATH="$HOME/bin:$PATH"
 alias jukebox="$HOME/bin/jukebox"
 
-# Automatic Jukebox startup — VISIBLE OUTPUT.
+# Visible automatic Jukebox startup.
 if [ -n "$TERMUX_VERSION" ] && [ -z "$JUKEBOX_AUTORUN_DONE" ]; then
     export JUKEBOX_AUTORUN_DONE=1
     if [ -f "$HOME/jukebox/server_v2.py" ] && ! pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then
         echo ""
-        echo "🎤 Starting Jukebox automatically..."
+        echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"
         "$HOME/bin/jukebox"
     fi
 fi
-# <<< JUKEBOX 10.5.09 <<<
+# <<< JUKEBOX 10.5.10 <<<
 EOF
 done
 
-# Bash login support.
+# Ensure Bash login shells load .bashrc.
 touch "$HOME/.bash_profile"
-sed -i '/# >>> JUKEBOX BASH PROFILE 10.5.09 >>>/,/# <<< JUKEBOX BASH PROFILE 10.5.09 <<</d' "$HOME/.bash_profile"
+sed -i '/# >>> JUKEBOX BASH PROFILE 10.5.10 >>>/,/# <<< JUKEBOX BASH PROFILE 10.5.10 <<</d' "$HOME/.bash_profile"
 cat >> "$HOME/.bash_profile" <<'EOF'
 
-# >>> JUKEBOX BASH PROFILE 10.5.09 >>>
+# >>> JUKEBOX BASH PROFILE 10.5.10 >>>
 if [ -f "$HOME/.bashrc" ]; then
     . "$HOME/.bashrc"
 fi
-# <<< JUKEBOX BASH PROFILE 10.5.09 <<<
+# <<< JUKEBOX BASH PROFILE 10.5.10 <<<
 EOF
 
-ok "Alias added to ~/.zshrc and ~/.bashrc"
-ok "Visible AutoRun enabled."
+ok "Old silent AutoRun blocks removed."
+ok "Alias installed in Bash + Zsh."
+ok "Visible AutoRun installed."
 
 step 7 "Checking Jukebox..."
 python -m py_compile "$J/server_v2.py"
@@ -140,11 +144,11 @@ echo "╔═══════════════════════�
 echo "║          🎉 SETUP COMPLETE! 🎉          ║"
 echo "╠══════════════════════════════════════════╣"
 echo "║  Command : jukebox                       ║"
-echo "║  Alias   : Bash + Zsh                    ║"
-echo "║  AutoRun : VISIBLE                        ║"
+echo "║  AutoRun : VISIBLE                       ║"
+echo "║  QR      : PLAYER + REMOTE               ║"
 echo "║  Storage : ~/storage/shared/KARAOKE      ║"
 echo "╚══════════════════════════════════════════╝"
 echo -e "${RESET}"
-echo -e "${YELLOW}Reload current shell:${RESET} ${CYAN}source ~/.zshrc${RESET}"
-echo -e "${MAGENTA}Close and reopen Termux to test AutoRun.${RESET}"
+echo -e "${YELLOW}Run now:${RESET} ${CYAN}source ~/.zshrc${RESET}"
+echo -e "${MAGENTA}The server will print Player/Remote URLs and QR codes.${RESET}"
 echo ""

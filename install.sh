@@ -15,7 +15,7 @@ clear
 echo -e "${CYAN}${BOLD}"
 echo "╔══════════════════════════════════════════╗"
 echo "║       🎤 JUKEBOX GITHUB INSTALLER 🎤    ║"
-echo "║                v10.5.09                 ║"
+echo "║                v10.5.10                 ║"
 echo "╚══════════════════════════════════════════╝"
 echo -e "${RESET}"
 
@@ -45,5 +45,5 @@ export PATH="$HOME/bin:$PATH"
 
 echo ""
 echo -e "${GREEN}${BOLD}✔ Jukebox installation finished!${RESET}"
-echo -e "${YELLOW}AutoRun is VISIBLE. Reopen Termux to test it.${RESET}"
+echo -e "${YELLOW}AutoRun is VISIBLE — no silent/background startup.${RESET}"
 echo ""
