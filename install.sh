@@ -97,7 +97,7 @@ cat > "$LAUNCHER" <<'LAUNCHER_EOF'
 J="$HOME/jukebox"
 SERVER="$J/server_v2.py"
 
-show_addresses() {
+show_already_running() {
     cd "$J" || return 1
 
     python - <<'PY'
@@ -105,14 +105,15 @@ import server_v2
 
 ip = server_v2.get_local_ip()
 port = server_v2.PORT
+player = f"http://{ip}:{port}/player"
+remote = f"http://{ip}:{port}/remote"
 
 print()
 print("\033[1;36m🎤 JUKEBOX ALREADY RUNNING\033[0m")
+print()
 
-server_v2.print_startup_ui(
-    f"http://{ip}:{port}/player",
-    f"http://{ip}:{port}/remote"
-)
+# Manual `jukebox` shows Player + Remote QR.
+server_v2.print_startup_ui(player, remote)
 
 print()
 print("\033[1;37m━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\033[0m")
@@ -121,7 +122,7 @@ print("\033[1;36m1.\033[0m Start manually:")
 print("   jukebox")
 print()
 print("\033[1;36m2.\033[0m Player:")
-print("   Browser → http://IP:8080/player")
+print(f"   Browser → {player}")
 print("   Opens automatically after 10 seconds.")
 print()
 print("\033[1;36m3.\033[0m Auto Start:")
@@ -134,14 +135,14 @@ print("\033[1;36m5.\033[0m Stop Jukebox:")
 print("   pkill -f server_v2.py")
 print()
 print("\033[1;36m6.\033[0m Server address:")
-print("   http://IP:8080/player")
+print(f"   {player}")
 print()
 print("\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m")
 PY
 }
 
 if pgrep -f "$SERVER" >/dev/null 2>&1; then
-    show_addresses
+    show_already_running
 
     IP="$(cd "$J" && python - <<'PY'
 import server_v2
@@ -187,7 +188,7 @@ remove_jukebox_block "$HOME/.zshrc"
 remove_jukebox_block "$HOME/.bashrc"
 
 # ============================================================
-# ADD JUKEBOX v10.5.21 TO .zshrc
+# ZSHRC — AUTO START + ACTUAL IP IN GUIDE
 # ============================================================
 
 cat >> "$HOME/.zshrc" <<'ZSH_EOF'
@@ -198,12 +199,54 @@ alias jukebox="$HOME/bin/jukebox"
 
 # Silent AutoRun
 if [[ -o interactive ]] && command -v python >/dev/null 2>&1; then
-    if [[ -f "$HOME/jukebox/server_v2.py" ]] && \
-       ! pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then
 
-        echo ""
-        echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"
-        echo ""
+    if [[ -f "$HOME/jukebox/server_v2.py" ]]; then
+
+        if pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then
+
+            echo ""
+            echo -e "\033[1;36m🎤 JUKEBOX ALREADY RUNNING\033[0m"
+            echo ""
+
+        else
+
+            echo ""
+            echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"
+            echo ""
+
+            cd "$HOME/jukebox"
+
+            nohup python -u "$HOME/jukebox/server_v2.py" \
+                >/dev/null 2>&1 &
+
+            (
+                sleep 10
+
+                IP="$(cd "$HOME/jukebox" && python - <<'PY'
+import server_v2
+print(server_v2.get_local_ip())
+PY
+)"
+
+                if [[ -n "$IP" ]]; then
+                    am start \
+                        -a android.intent.action.VIEW \
+                        -d "http://$IP:8080/player" \
+                        >/dev/null 2>&1
+                fi
+
+            ) >/dev/null 2>&1 &
+
+        fi
+
+        # Get actual server IP for the guide.
+        IP="$(cd "$HOME/jukebox" && python - <<'PY'
+import server_v2
+print(server_v2.get_local_ip())
+PY
+)"
+
+        PLAYER_URL="http://${IP}:8080/player"
 
         echo -e "\033[1;37m━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\033[0m"
         echo ""
@@ -211,7 +254,7 @@ if [[ -o interactive ]] && command -v python >/dev/null 2>&1; then
         echo "   jukebox"
         echo ""
         echo -e "\033[1;36m2.\033[0m Player:"
-        echo "   Browser → http://IP:8080/player"
+        echo "   Browser → ${PLAYER_URL}"
         echo "   Opens automatically after 10 seconds."
         echo ""
         echo -e "\033[1;36m3.\033[0m Auto Start:"
@@ -224,33 +267,10 @@ if [[ -o interactive ]] && command -v python >/dev/null 2>&1; then
         echo "   pkill -f server_v2.py"
         echo ""
         echo -e "\033[1;36m6.\033[0m Server address:"
-        echo "   http://IP:8080/player"
+        echo "   ${PLAYER_URL}"
         echo ""
         echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
         echo ""
-
-        cd "$HOME/jukebox"
-
-        nohup python -u "$HOME/jukebox/server_v2.py" \
-            >/dev/null 2>&1 &
-
-        (
-            sleep 10
-
-            IP="$(cd "$HOME/jukebox" && python - <<'PY'
-import server_v2
-print(server_v2.get_local_ip())
-PY
-)"
-
-            if [[ -n "$IP" ]]; then
-                am start \
-                    -a android.intent.action.VIEW \
-                    -d "http://$IP:8080/player" \
-                    >/dev/null 2>&1
-            fi
-
-        ) >/dev/null 2>&1 &
 
     fi
 fi
@@ -258,7 +278,7 @@ fi
 ZSH_EOF
 
 # ============================================================
-# ADD JUKEBOX v10.5.21 TO .bashrc
+# BASHRC — SAME AUTO START + ACTUAL IP IN GUIDE
 # ============================================================
 
 cat >> "$HOME/.bashrc" <<'BASH_EOF'
@@ -269,12 +289,54 @@ alias jukebox="$HOME/bin/jukebox"
 
 # Silent AutoRun
 if [[ $- == *i* ]] && command -v python >/dev/null 2>&1; then
-    if [[ -f "$HOME/jukebox/server_v2.py" ]] && \
-       ! pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then
 
-        echo ""
-        echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"
-        echo ""
+    if [[ -f "$HOME/jukebox/server_v2.py" ]]; then
+
+        if pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then
+
+            echo ""
+            echo -e "\033[1;36m🎤 JUKEBOX ALREADY RUNNING\033[0m"
+            echo ""
+
+        else
+
+            echo ""
+            echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"
+            echo ""
+
+            cd "$HOME/jukebox"
+
+            nohup python -u "$HOME/jukebox/server_v2.py" \
+                >/dev/null 2>&1 &
+
+            (
+                sleep 1
+
+                IP="$(cd "$HOME/jukebox" && python - <<'PY'
+import server_v2
+print(server_v2.get_local_ip())
+PY
+)"
+
+                if [[ -n "$IP" ]]; then
+                    am start \
+                        -a android.intent.action.VIEW \
+                        -d "http://$IP:8080/player" \
+                        >/dev/null 2>&1
+                fi
+
+            ) >/dev/null 2>&1 &
+
+        fi
+
+        # Get actual server IP for the guide.
+        IP="$(cd "$HOME/jukebox" && python - <<'PY'
+import server_v2
+print(server_v2.get_local_ip())
+PY
+)"
+
+        PLAYER_URL="http://${IP}:8080/player"
 
         echo -e "\033[1;37m━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\033[0m"
         echo ""
@@ -282,8 +344,8 @@ if [[ $- == *i* ]] && command -v python >/dev/null 2>&1; then
         echo "   jukebox"
         echo ""
         echo -e "\033[1;36m2.\033[0m Player:"
-        echo "   Browser → http://IP:8080/player"
-        echo "   Opens automatically after 10 seconds."
+        echo "   Browser → ${PLAYER_URL}"
+        echo "   Opens automatically after 1 seconds."
         echo ""
         echo -e "\033[1;36m3.\033[0m Auto Start:"
         echo "   Jukebox starts automatically when Termux opens."
@@ -295,38 +357,14 @@ if [[ $- == *i* ]] && command -v python >/dev/null 2>&1; then
         echo "   pkill -f server_v2.py"
         echo ""
         echo -e "\033[1;36m6.\033[0m Server address:"
-        echo "   http://IP:8080/player"
+        echo "   ${PLAYER_URL}"
         echo ""
         echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
         echo ""
 
-        cd "$HOME/jukebox"
-
-        nohup python -u "$HOME/jukebox/server_v2.py" \
-            >/dev/null 2>&1 &
-
-        (
-            sleep 10
-
-            IP="$(cd "$HOME/jukebox" && python - <<'PY'
-import server_v2
-print(server_v2.get_local_ip())
-PY
-)"
-
-            if [[ -n "$IP" ]]; then
-                am start \
-                    -a android.intent.action.VIEW \
-                    -d "http://$IP:8080/player" \
-                    >/dev/null 2>&1
-            fi
-
-        ) >/dev/null 2>&1 &
-
     fi
 fi
 # <<< JUKEBOX 10.5.21 <<<
-
 BASH_EOF
 
 # ============================================================
