@@ -8,7 +8,7 @@ LAUNCHER="$BIN/jukebox"
 KARAOKE="$HOME/storage/shared/KARAOKE"
 
 # Easy setting: seconds before AutoRun opens the Player.
-JUKEBOX_OPEN_DELAY=10
+JUKEBOX_OPEN_DELAY=1
 
 echo "========================================"
 echo "🎤 JUKEBOX INSTALLER v10.5.37"
