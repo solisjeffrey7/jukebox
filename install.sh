@@ -10,7 +10,7 @@ set -e
 # ===================== JUKEBOX SETTINGS =====================
 # Delay before automatically opening the Player in the browser.
 # Change this value only (in seconds) when you want a different delay.
-JUKEBOX_OPEN_DELAY=1
+JUKEBOX_OPEN_DELAY=3
 # =============================================================
 
 J="$HOME/jukebox"
