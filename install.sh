@@ -3,95 +3,193 @@
 set -e
 
 REPO="https://github.com/solisjeffrey7/jukebox.git"
-APP_DIR="$HOME/jukebox"
-KARAOKE_DIR="$HOME/storage/shared/KARAOKE"
+INSTALL_DIR="$HOME/jukebox"
+SERVER="server_v2.py"
+ALIAS_NAME="jukebox"
 
-echo
+echo ""
 echo "======================================"
-echo "       JUKEBOX SERVER INSTALLER"
+echo "       JUKEBOX TERMUX INSTALLER"
 echo "======================================"
-echo
+echo ""
 
-if [ -z "$PREFIX" ] || [ ! -d "$PREFIX" ]; then
-    echo "ERROR: This installer is for Termux only."
-    exit 1
-fi
+# --------------------------------------
+# Update Termux packages
+# --------------------------------------
 
-echo "[1/4] Installing Python and Git..."
+echo "[1/6] Updating Termux packages..."
 
 pkg update -y
-pkg install -y python git
+pkg upgrade -y
 
-echo
-echo "[2/4] Checking Android storage..."
+# --------------------------------------
+# Required packages
+# --------------------------------------
 
-if [ ! -d "$HOME/storage/shared" ]; then
-    echo
-    echo "ERROR: Android storage is not available."
-    echo
-    echo "Run this once manually:"
-    echo
-    echo "termux-setup-storage"
-    echo
-    exit 1
-fi
+echo "[2/6] Installing required packages..."
 
-echo "Storage: OK"
-echo
+pkg install -y \
+    git \
+    python \
+    ffmpeg \
+    curl \
+    wget \
+    jq \
+    openssl \
+    termux-api
 
-echo "[3/4] Installing Jukebox..."
+# --------------------------------------
+# Clone / Update Jukebox
+# --------------------------------------
 
-if [ -d "$APP_DIR/.git" ]; then
+echo "[3/6] Installing Jukebox..."
 
-    echo "Existing installation detected."
-    echo "Updating Jukebox..."
+if [ -d "$INSTALL_DIR/.git" ]; then
+    echo "Jukebox already exists."
+    echo "Updating repository..."
 
-    git -C "$APP_DIR" pull --ff-only
+    cd "$INSTALL_DIR"
 
+    git fetch --all
+    git reset --hard origin/main
 else
+    echo "Cloning Jukebox..."
 
-    if [ -e "$APP_DIR" ]; then
-        echo
-        echo "ERROR: $APP_DIR already exists."
-        echo
-        echo "Remove it with:"
-        echo
-        echo "rm -rf $APP_DIR"
-        echo
-        exit 1
-    fi
-
-    git clone "$REPO" "$APP_DIR"
-
+    git clone "$REPO" "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
 fi
 
-mkdir -p "$KARAOKE_DIR"
+# --------------------------------------
+# Python requirements
+# --------------------------------------
 
-echo
-echo "KARAOKE folder:"
-echo "$KARAOKE_DIR"
-echo
+echo "[4/6] Installing Python requirements..."
 
-echo "[4/4] Checking Jukebox Server..."
+python -m pip install --upgrade pip
 
-if [ ! -f "$APP_DIR/jukebox-server.py" ]; then
-    echo
-    echo "ERROR: jukebox-server.py not found."
+if [ -f requirements.txt ]; then
+    python -m pip install -r requirements.txt
+else
+    echo "requirements.txt not found."
+    echo "Installing common Jukebox dependencies..."
+
+    python -m pip install \
+        requests \
+        flask \
+        yt-dlp
+fi
+
+# --------------------------------------
+# Check server
+# --------------------------------------
+
+echo "[5/6] Checking Jukebox server..."
+
+if [ ! -f "$INSTALL_DIR/$SERVER" ]; then
+    echo ""
+    echo "ERROR:"
+    echo "$SERVER was not found in:"
+    echo "$INSTALL_DIR"
+    echo ""
     exit 1
 fi
 
-python -m py_compile "$APP_DIR/jukebox-server.py"
+chmod +x "$INSTALL_DIR/$SERVER"
 
-echo
-echo "Server check: OK"
-echo
+# --------------------------------------
+# Create launcher
+# --------------------------------------
+
+LAUNCHER="$INSTALL_DIR/run-jukebox.sh"
+
+cat > "$LAUNCHER" <<EOF
+#!/data/data/com.termux/files/usr/bin/bash
+
+cd "$INSTALL_DIR"
+
+exec python "$SERVER"
+EOF
+
+chmod +x "$LAUNCHER"
+
+# --------------------------------------
+# Add alias to shell configs
+# --------------------------------------
+
+echo "[6/6] Configuring shell..."
+
+add_alias() {
+    local RC="$1"
+
+    touch "$RC"
+
+    # Remove old Jukebox alias block
+    sed -i '/# JUKEBOX AUTO CONFIG START/,/# JUKEBOX AUTO CONFIG END/d' "$RC"
+
+    cat >> "$RC" <<EOF
+
+# JUKEBOX AUTO CONFIG START
+alias $ALIAS_NAME='$LAUNCHER'
+# JUKEBOX AUTO CONFIG END
+EOF
+}
+
+add_alias "$HOME/.zshrc"
+add_alias "$HOME/.bashrc"
+
+# --------------------------------------
+# Auto-run Termux
+# --------------------------------------
+
+# Create separate autostart file
+AUTORUN="$HOME/.jukebox_autorun.sh"
+
+cat > "$AUTORUN" <<EOF
+#!/data/data/com.termux/files/usr/bin/bash
+
+# Prevent duplicate Jukebox processes
+if ! pgrep -f "python $SERVER" >/dev/null 2>&1; then
+    cd "$INSTALL_DIR"
+    exec python "$SERVER"
+fi
+EOF
+
+chmod +x "$AUTORUN"
+
+# Add autorun only to interactive shells
+for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
+
+    sed -i '/# JUKEBOX AUTO RUN START/,/# JUKEBOX AUTO RUN END/d' "$RC"
+
+    cat >> "$RC" <<EOF
+
+# JUKEBOX AUTO RUN START
+if [[ -n "\$TERMUX_VERSION" ]] && [[ "\$JUKEBOX_AUTORUN" != "1" ]]; then
+    export JUKEBOX_AUTORUN=1
+    "$AUTORUN"
+fi
+# JUKEBOX AUTO RUN END
+EOF
+
+done
+
+echo ""
 echo "======================================"
-echo "       INSTALLATION COMPLETE"
+echo "       JUKEBOX INSTALL COMPLETE"
 echo "======================================"
-echo
-echo "Starting Jukebox Server..."
-echo
-
-cd "$APP_DIR"
-
-exec python jukebox-server.py
+echo ""
+echo "Jukebox directory:"
+echo "  $INSTALL_DIR"
+echo ""
+echo "Server:"
+echo "  $SERVER"
+echo ""
+echo "Manual run:"
+echo "  jukebox"
+echo ""
+echo "Auto-run:"
+echo "  Enabled"
+echo ""
+echo "Close and reopen Termux."
+echo "Jukebox should start automatically."
+echo ""
