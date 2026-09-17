@@ -174,8 +174,8 @@ cat >> "$HOME/.zshrc" <<'ZSH_EOF'
 export PATH="$HOME/bin:$PATH"
 alias jukebox="$HOME/bin/jukebox"
 
-# Silent AutoRun: start Jukebox and open Player in Android browser.
-if [[ -o interactive ]] && [[ -n "$TERMUX_VERSION" ]]; then
+# Silent AutoRun
+if [[ -o interactive ]] && command -v python >/dev/null 2>&1; then
     if [[ -f "$HOME/jukebox/server_v2.py" ]] && \
        ! pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then
 
@@ -213,16 +213,15 @@ if [[ -o interactive ]] && [[ -n "$TERMUX_VERSION" ]]; then
             >/dev/null 2>&1 &
 
         (
-            sleep 4
+            sleep 10
 
-            IP="$(python - <<'PY'
+            IP="$(cd "$HOME/jukebox" && python - <<'PY'
 import server_v2
 print(server_v2.get_local_ip())
 PY
 )"
 
             if [[ -n "$IP" ]]; then
-                sleep 6
                 am start \
                     -a android.intent.action.VIEW \
                     -d "http://$IP:8080/player" \
@@ -230,13 +229,14 @@ PY
             fi
 
         ) >/dev/null 2>&1 &
+
     fi
 fi
 # <<< JUKEBOX 10.5.21 <<<
 ZSH_EOF
 
 # ============================================================
-# ADD ONLY ALIAS TO .bashrc
+# ADD JUKEBOX v10.5.21 TO .bashrc
 # ============================================================
 
 cat >> "$HOME/.bashrc" <<'BASH_EOF'
@@ -244,7 +244,67 @@ cat >> "$HOME/.bashrc" <<'BASH_EOF'
 # >>> JUKEBOX 10.5.21 >>>
 export PATH="$HOME/bin:$PATH"
 alias jukebox="$HOME/bin/jukebox"
+
+# Silent AutoRun
+if [[ $- == *i* ]] && command -v python >/dev/null 2>&1; then
+    if [[ -f "$HOME/jukebox/server_v2.py" ]] && \
+       ! pgrep -f "$HOME/jukebox/server_v2.py" >/dev/null 2>&1; then
+
+        echo ""
+        echo -e "\033[1;36m🎤 Starting Jukebox automatically...\033[0m"
+        echo ""
+
+        echo -e "\033[1;37m━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\033[0m"
+        echo ""
+        echo -e "\033[1;36m1.\033[0m Start manually:"
+        echo "   jukebox"
+        echo ""
+        echo -e "\033[1;36m2.\033[0m Player:"
+        echo "   Browser → http://IP:8080/player"
+        echo "   Opens automatically after 10 seconds."
+        echo ""
+        echo -e "\033[1;36m3.\033[0m Auto Start:"
+        echo "   Jukebox starts automatically when Termux opens."
+        echo ""
+        echo -e "\033[1;36m4.\033[0m Already running:"
+        echo "   No second server."
+        echo ""
+        echo -e "\033[1;36m5.\033[0m Stop Jukebox:"
+        echo "   pkill -f server_v2.py"
+        echo ""
+        echo -e "\033[1;36m6.\033[0m Server address:"
+        echo "   http://IP:8080/player"
+        echo ""
+        echo -e "\033[1;37m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+        echo ""
+
+        cd "$HOME/jukebox"
+
+        nohup python -u "$HOME/jukebox/server_v2.py" \
+            >/dev/null 2>&1 &
+
+        (
+            sleep 10
+
+            IP="$(cd "$HOME/jukebox" && python - <<'PY'
+import server_v2
+print(server_v2.get_local_ip())
+PY
+)"
+
+            if [[ -n "$IP" ]]; then
+                am start \
+                    -a android.intent.action.VIEW \
+                    -d "http://$IP:8080/player" \
+                    >/dev/null 2>&1
+            fi
+
+        ) >/dev/null 2>&1 &
+
+    fi
+fi
 # <<< JUKEBOX 10.5.21 <<<
+
 BASH_EOF
 
 # ============================================================
