@@ -2,7 +2,7 @@
 set -e
 
 # ============================================================
-# 🎤 JUKEBOX INSTALLER v10.5.49
+# 🎤 JUKEBOX INSTALLER v10.5.52
 # ============================================================
 
 # ============================================================
@@ -80,7 +80,7 @@ QR_WHITE_B=255
 # ============================================================
 
 echo "========================================"
-echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.49${COLOR_RESET}"
+echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.52${COLOR_RESET}"
 echo "========================================"
 
 # ============================================================
@@ -140,11 +140,105 @@ fi
 echo -e "${COLOR_SUCCESS}✅ qrcode OK${COLOR_RESET}"
 
 # ============================================================
-# DIRECTORIES
+# DIRECTORIES / STORAGE
 # ============================================================
 
 mkdir -p "$BIN"
-mkdir -p "$KARAOKE"
+
+echo
+echo "🔎 Checking Termux shared storage..."
+
+# ------------------------------------------------------------
+# IMPORTANT:
+# Do NOT create ~/storage/shared manually.
+#
+# Termux creates ~/storage/shared as a symlink after:
+#
+#     termux-setup-storage
+#
+# This prevents creation of a fake:
+#
+#     ~/storage/shared/KARAOKE
+#
+# inside Termux's private filesystem.
+# ------------------------------------------------------------
+
+if [ ! -L "$HOME/storage/shared" ]; then
+
+    echo
+    echo -e "${COLOR_WARNING}📱 Termux shared storage is not configured.${COLOR_RESET}"
+    echo "🔐 Requesting Android storage permission..."
+    echo
+
+    termux-setup-storage
+
+    echo
+    echo "⏳ Waiting for storage permission..."
+    sleep 2
+
+fi
+
+# ------------------------------------------------------------
+# VERIFY SHARED STORAGE
+# ------------------------------------------------------------
+
+if [ ! -L "$HOME/storage/shared" ] || [ ! -d "$HOME/storage/shared" ]; then
+
+    echo
+    echo "========================================"
+    echo -e "${COLOR_ERROR}❌ SHARED STORAGE NOT AVAILABLE${COLOR_RESET}"
+    echo "========================================"
+    echo
+    echo "Termux could not access Android shared storage."
+    echo
+    echo "Please:"
+    echo "1. Allow storage permission."
+    echo "2. Close Termux."
+    echo "3. Open Termux again."
+    echo "4. Run this installer again."
+    echo
+
+    exit 1
+
+fi
+
+echo
+echo -e "${COLOR_SUCCESS}✅ Android shared storage OK${COLOR_RESET}"
+echo "   $HOME/storage/shared"
+
+# ------------------------------------------------------------
+# SHOW ACTUAL STORAGE TARGET
+# ------------------------------------------------------------
+
+REAL_STORAGE="$(readlink -f "$HOME/storage/shared" 2>/dev/null || true)"
+
+if [ -n "$REAL_STORAGE" ]; then
+    echo "   Target: $REAL_STORAGE"
+fi
+
+# ============================================================
+# KARAOKE DIRECTORY
+# ============================================================
+
+echo
+echo "🔎 Checking KARAOKE folder..."
+
+if [ -d "$KARAOKE" ]; then
+
+    echo -e "${COLOR_SUCCESS}✅ Existing KARAOKE folder found${COLOR_RESET}"
+    echo "   $KARAOKE"
+
+else
+
+    echo -e "${COLOR_WARNING}⚠️ KARAOKE folder not found.${COLOR_RESET}"
+    echo "📁 Creating KARAOKE folder in Android shared storage..."
+
+    mkdir -p "$KARAOKE"
+
+    echo -e "${COLOR_SUCCESS}✅ KARAOKE folder created${COLOR_RESET}"
+    echo "   $KARAOKE"
+
+fi
 
 # ============================================================
 # GITHUB REPOSITORY
@@ -251,6 +345,29 @@ echo "   $SERVER_NAME"
 echo "   → server_v2.py"
 
 # ============================================================
+# COPY preview.png TO KARAOKE
+# ============================================================
+
+echo
+echo "🖼️ Checking preview.png..."
+
+if [ -f "$J/preview.png" ]; then
+
+    cp "$J/preview.png" "$KARAOKE/preview.png"
+
+    echo -e "${COLOR_SUCCESS}✅ preview.png copied${COLOR_RESET}"
+    echo "   $J/preview.png"
+    echo "   → $KARAOKE/preview.png"
+
+else
+
+    echo -e "${COLOR_WARNING}⚠️ preview.png not found in Jukebox folder${COLOR_RESET}"
+    echo "   Expected:"
+    echo "   $J/preview.png"
+
+fi
+
+# ============================================================
 # CHECK SERVER
 # ============================================================
 
@@ -292,6 +409,41 @@ EOF
 chmod +x "$KILLER"
 
 # ============================================================
+# CLEAN OLD JUKEBOX ENTRIES
+# ============================================================
+
+echo
+echo "🧹 Cleaning old Jukebox entries..."
+
+for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
+
+    touch "$RC"
+
+    # Remove old versioned JUKEBOX command blocks
+    sed -i \
+        '/# JUKEBOX v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* START/,/# JUKEBOX v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* END/d' \
+        "$RC"
+
+    # Remove old versioned AUTORUN blocks
+    sed -i \
+        '/# JUKEBOX AUTORUN v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* START/,/# JUKEBOX AUTORUN v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* END/d' \
+        "$RC"
+
+    # Remove generic JUKEBOX block
+    sed -i \
+        '/# JUKEBOX START/,/# JUKEBOX END/d' \
+        "$RC"
+
+    # Remove generic AUTORUN block
+    sed -i \
+        '/# JUKEBOX AUTORUN START/,/# JUKEBOX AUTORUN END/d' \
+        "$RC"
+
+done
+
+echo -e "${COLOR_SUCCESS}✅ Old Jukebox entries cleaned${COLOR_RESET}"
+
+# ============================================================
 # ZSH / BASH COMMANDS
 # ============================================================
 
@@ -299,22 +451,20 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
 
     touch "$RC"
 
-    sed -i \
-        '/# JUKEBOX v10\.5\.49 START/,/# JUKEBOX v10\.5\.49 END/d' \
-        "$RC"
-
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX v10.5.49 START
+# JUKEBOX START
 export PATH="$HOME/bin:$PATH"
 
 alias jukebox="pkill -f server_v2.py; cd ~/jukebox; python3 server_v2.py"
 
 alias killjukebox="pkill -f server_v2.py"
-# JUKEBOX v10.5.49 END
+# JUKEBOX END
 EOF
 
 done
+
+echo -e "${COLOR_SUCCESS}✅ Shell commands installed${COLOR_RESET}"
 
 # ============================================================
 # AUTORUN SCRIPT
@@ -555,27 +705,32 @@ EOF
 
 chmod +x "$J/autorun_jukebox.sh"
 
+echo -e "${COLOR_SUCCESS}✅ AutoRun script installed${COLOR_RESET}"
+
 # ============================================================
 # AUTORUN HOOK
 # ============================================================
 
 for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
 
+    # Remove any previous generic autorun block
     sed -i \
-        '/# JUKEBOX AUTORUN v10\.5\.49 START/,/# JUKEBOX AUTORUN v10\.5\.49 END/d' \
+        '/# JUKEBOX AUTORUN START/,/# JUKEBOX AUTORUN END/d' \
         "$RC"
 
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX AUTORUN v10.5.49 START
+# JUKEBOX AUTORUN START
 if [[ $- == *i* && -z "${JUKEBOX_AUTORUN_DONE:-}" ]]; then
     export JUKEBOX_AUTORUN_DONE=1
     "$HOME/jukebox/autorun_jukebox.sh"
 fi
-# JUKEBOX AUTORUN v10.5.49 END
+# JUKEBOX AUTORUN END
 EOF
 
 done
+
+echo -e "${COLOR_SUCCESS}✅ AutoRun hook installed${COLOR_RESET}"
 
 # ============================================================
 # FINAL
@@ -583,7 +738,7 @@ done
 
 echo
 echo "========================================"
-echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.49 INSTALLED${COLOR_RESET}"
+echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.52 INSTALLED${COLOR_RESET}"
 echo "========================================"
 echo
 
@@ -595,6 +750,29 @@ echo -e "Stop        : ${COLOR_ERROR}killjukebox${COLOR_RESET}"
 echo -e "AutoRun     : ${COLOR_SUCCESS}enabled${COLOR_RESET}"
 echo -e "Delay       : ${COLOR_WARNING}${JUKEBOX_OPEN_DELAY} second${COLOR_RESET}"
 echo -e "QR          : ${COLOR_PLAYER}Player + Remote${COLOR_RESET}"
+echo -e "KARAOKE     : ${COLOR_PLAYER}$KARAOKE${COLOR_RESET}"
+echo -e "Preview     : ${COLOR_PLAYER}$KARAOKE/preview.png${COLOR_RESET}"
+
+echo
+echo "========================================"
+echo -e "${COLOR_TITLE}STORAGE${COLOR_RESET}"
+echo "========================================"
+echo
+
+echo -e "Shared Storage:"
+echo -e "  ${COLOR_SUCCESS}$HOME/storage/shared${COLOR_RESET}"
+
+REAL_STORAGE="$(readlink -f "$HOME/storage/shared" 2>/dev/null || true)"
+
+if [ -n "$REAL_STORAGE" ]; then
+    echo
+    echo "Actual Target:"
+    echo "  $REAL_STORAGE"
+fi
+
+echo
+echo "KARAOKE:"
+echo "  $KARAOKE"
 
 echo
 echo "========================================"
@@ -613,6 +791,11 @@ echo
 echo "QR:"
 echo "  QR_BOX_SIZE=$QR_BOX_SIZE"
 echo "  QR_BORDER=$QR_BORDER"
+
+echo
+echo "Preview:"
+echo "  Source : $J/preview.png"
+echo "  Target : $KARAOKE/preview.png"
 
 echo
 echo "========================================"
