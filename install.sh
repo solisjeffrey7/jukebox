@@ -2,7 +2,7 @@
 set -e
 
 # ============================================================
-# 🎤 JUKEBOX INSTALLER v10.5.49
+# 🎤 JUKEBOX INSTALLER v10.5.50
 # ============================================================
 
 # ============================================================
@@ -80,7 +80,7 @@ QR_WHITE_B=255
 # ============================================================
 
 echo "========================================"
-echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.49${COLOR_RESET}"
+echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.50${COLOR_RESET}"
 echo "========================================"
 
 # ============================================================
@@ -251,6 +251,29 @@ echo "   $SERVER_NAME"
 echo "   → server_v2.py"
 
 # ============================================================
+# COPY preview.png TO KARAOKE
+# ============================================================
+
+echo
+echo "🖼️ Checking preview.png..."
+
+if [ -f "$J/preview.png" ]; then
+
+    cp "$J/preview.png" "$KARAOKE/preview.png"
+
+    echo -e "${COLOR_SUCCESS}✅ preview.png copied${COLOR_RESET}"
+    echo "   $J/preview.png"
+    echo "   → $KARAOKE/preview.png"
+
+else
+
+    echo -e "${COLOR_WARNING}⚠️ preview.png not found in Jukebox folder${COLOR_RESET}"
+    echo "   Expected:"
+    echo "   $J/preview.png"
+
+fi
+
+# ============================================================
 # CHECK SERVER
 # ============================================================
 
@@ -300,18 +323,18 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
     touch "$RC"
 
     sed -i \
-        '/# JUKEBOX v10\.5\.49 START/,/# JUKEBOX v10\.5\.49 END/d' \
+        '/# JUKEBOX v10\.5\.50 START/,/# JUKEBOX v10\.5\.50 END/d' \
         "$RC"
 
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX v10.5.49 START
+# JUKEBOX v10.5.50 START
 export PATH="$HOME/bin:$PATH"
 
 alias jukebox="pkill -f server_v2.py; cd ~/jukebox; python3 server_v2.py"
 
 alias killjukebox="pkill -f server_v2.py"
-# JUKEBOX v10.5.49 END
+# JUKEBOX v10.5.50 END
 EOF
 
 done
@@ -562,17 +585,17 @@ chmod +x "$J/autorun_jukebox.sh"
 for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
 
     sed -i \
-        '/# JUKEBOX AUTORUN v10\.5\.49 START/,/# JUKEBOX AUTORUN v10\.5\.49 END/d' \
+        '/# JUKEBOX AUTORUN v10\.5\.50 START/,/# JUKEBOX AUTORUN v10\.5\.50 END/d' \
         "$RC"
 
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX AUTORUN v10.5.49 START
+# JUKEBOX AUTORUN v10.5.50 START
 if [[ $- == *i* && -z "${JUKEBOX_AUTORUN_DONE:-}" ]]; then
     export JUKEBOX_AUTORUN_DONE=1
     "$HOME/jukebox/autorun_jukebox.sh"
 fi
-# JUKEBOX AUTORUN v10.5.49 END
+# JUKEBOX AUTORUN v10.5.50 END
 EOF
 
 done
@@ -583,7 +606,7 @@ done
 
 echo
 echo "========================================"
-echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.49 INSTALLED${COLOR_RESET}"
+echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.50 INSTALLED${COLOR_RESET}"
 echo "========================================"
 echo
 
@@ -595,6 +618,7 @@ echo -e "Stop        : ${COLOR_ERROR}killjukebox${COLOR_RESET}"
 echo -e "AutoRun     : ${COLOR_SUCCESS}enabled${COLOR_RESET}"
 echo -e "Delay       : ${COLOR_WARNING}${JUKEBOX_OPEN_DELAY} second${COLOR_RESET}"
 echo -e "QR          : ${COLOR_PLAYER}Player + Remote${COLOR_RESET}"
+echo -e "Preview     : ${COLOR_PLAYER}$KARAOKE/preview.png${COLOR_RESET}"
 
 echo
 echo "========================================"
@@ -613,6 +637,11 @@ echo
 echo "QR:"
 echo "  QR_BOX_SIZE=$QR_BOX_SIZE"
 echo "  QR_BORDER=$QR_BORDER"
+
+echo
+echo "Preview:"
+echo "  Source : $J/preview.png"
+echo "  Target : $KARAOKE/preview.png"
 
 echo
 echo "========================================"
