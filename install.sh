@@ -2,20 +2,31 @@
 set -e
 
 # ============================================================
-# 🎤 JUKEBOX INSTALLER v10.5.48
+# 🎤 JUKEBOX INSTALLER v10.5.49
 # ============================================================
 
-REPO="https://github.com/solisjeffrey7/jukebox.git"
+# ============================================================
+# SERVER SETTINGS
+# ============================================================
+
+# Change the base server filename here only
+SERVER_NAME="server_v2.py"
 
 J="$HOME/jukebox"
+BASE_SERVER="$J/$SERVER_NAME"
 SERVER="$J/server_v2.py"
-BASE_SERVER="$J/server_10.5.06.py"
 
 BIN="$HOME/bin"
 LAUNCHER="$BIN/jukebox"
 KILLER="$BIN/killjukebox"
 
 KARAOKE="$HOME/storage/shared/KARAOKE"
+
+# ============================================================
+# GITHUB SETTINGS
+# ============================================================
+
+REPO="https://github.com/solisjeffrey7/jukebox.git"
 
 # ============================================================
 # EASY SETTINGS
@@ -25,7 +36,7 @@ KARAOKE="$HOME/storage/shared/KARAOKE"
 JUKEBOX_OPEN_DELAY=1
 
 # ============================================================
-# TEXT COLORS
+# TEXT COLOR SETTINGS
 # ============================================================
 
 COLOR_JUKEBOX="\033[1;33m"
@@ -51,15 +62,15 @@ COLOR_RESET="\033[0m"
 # 3 = large
 QR_BOX_SIZE=1
 
-# White border around QR
+# Space around QR
 QR_BORDER=2
 
-# QR BLACK
+# QR BLACK COLOR
 QR_BLACK_R=0
 QR_BLACK_G=0
 QR_BLACK_B=0
 
-# QR WHITE / BACKGROUND
+# QR WHITE / BACKGROUND COLOR
 QR_WHITE_R=255
 QR_WHITE_G=255
 QR_WHITE_B=255
@@ -69,7 +80,7 @@ QR_WHITE_B=255
 # ============================================================
 
 echo "========================================"
-echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.48${COLOR_RESET}"
+echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.49${COLOR_RESET}"
 echo "========================================"
 
 # ============================================================
@@ -148,22 +159,20 @@ if [ -d "$J/.git" ]; then
 
     echo
     echo "📂 Existing Jukebox Git repository found."
+    echo "🔄 Updating repository..."
 
     cd "$J"
 
-    echo "🔄 Updating repository..."
-
     git fetch origin
-
     git reset --hard origin/main
 
 else
 
     if [ -d "$J" ]; then
+
         echo
         echo "📂 Existing ~/jukebox found."
-        echo "   Initializing Git repository..."
-        echo
+        echo "🔧 Connecting it to GitHub..."
 
         cd "$J"
 
@@ -173,7 +182,6 @@ else
         git remote add origin "$REPO"
 
         git fetch origin
-
         git reset --hard origin/main
 
     else
@@ -191,31 +199,42 @@ echo
 echo -e "${COLOR_SUCCESS}✅ GitHub repository ready${COLOR_RESET}"
 
 # ============================================================
-# FIND WORKING SERVER
+# LOCATE BASE SERVER
 # ============================================================
 
 echo
-echo "🔎 Locating server_10.5.06.py..."
+echo "🔎 Locating base server:"
+echo -e "   ${COLOR_LINK}${SERVER_NAME}${COLOR_RESET}"
 
-if [ -f "$J/server_10.5.06.py" ]; then
+if [ -f "$BASE_SERVER" ]; then
 
-    echo -e "${COLOR_SUCCESS}✅ Found:${COLOR_RESET} $J/server_10.5.06.py"
+    echo -e "${COLOR_SUCCESS}✅ Found:${COLOR_RESET}"
+    echo "   $BASE_SERVER"
 
-elif [ -f "$HOME/server_10.5.06.py" ]; then
+elif [ -f "$HOME/$SERVER_NAME" ]; then
 
-    cp "$HOME/server_10.5.06.py" "$J/server_10.5.06.py"
+    echo
+    echo "📋 Copying server from HOME..."
 
-    echo -e "${COLOR_SUCCESS}✅ Copied working server into Jukebox folder${COLOR_RESET}"
+    cp "$HOME/$SERVER_NAME" "$BASE_SERVER"
+
+    echo -e "${COLOR_SUCCESS}✅ Copied:${COLOR_RESET}"
+    echo "   $HOME/$SERVER_NAME"
+    echo "   → $BASE_SERVER"
 
 else
 
     echo
-    echo -e "${COLOR_ERROR}❌ server_10.5.06.py not found.${COLOR_RESET}"
+    echo -e "${COLOR_ERROR}❌ $SERVER_NAME not found.${COLOR_RESET}"
     echo
-    echo "GitHub repository:"
-    echo "  $REPO"
+    echo "Expected location:"
+    echo "   $BASE_SERVER"
+    echo
+    echo "or:"
+    echo "   $HOME/$SERVER_NAME"
     echo
     exit 1
+
 fi
 
 # ============================================================
@@ -223,11 +242,13 @@ fi
 # ============================================================
 
 echo
-echo "🔧 Preparing server_v2.py..."
+echo "🔧 Creating server_v2.py..."
 
-cp "$J/server_10.5.06.py" "$SERVER"
+cp "$BASE_SERVER" "$SERVER"
 
-echo -e "${COLOR_SUCCESS}✅ server_10.5.06.py → server_v2.py${COLOR_RESET}"
+echo -e "${COLOR_SUCCESS}✅ Base server copied:${COLOR_RESET}"
+echo "   $SERVER_NAME"
+echo "   → server_v2.py"
 
 # ============================================================
 # CHECK SERVER
@@ -271,7 +292,7 @@ EOF
 chmod +x "$KILLER"
 
 # ============================================================
-# ZSH / BASH
+# ZSH / BASH COMMANDS
 # ============================================================
 
 for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
@@ -279,18 +300,18 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
     touch "$RC"
 
     sed -i \
-        '/# JUKEBOX v10\.5\.48 START/,/# JUKEBOX v10\.5\.48 END/d' \
+        '/# JUKEBOX v10\.5\.49 START/,/# JUKEBOX v10\.5\.49 END/d' \
         "$RC"
 
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX v10.5.48 START
+# JUKEBOX v10.5.49 START
 export PATH="$HOME/bin:$PATH"
 
 alias jukebox="pkill -f server_v2.py; cd ~/jukebox; python3 server_v2.py"
 
 alias killjukebox="pkill -f server_v2.py"
-# JUKEBOX v10.5.48 END
+# JUKEBOX v10.5.49 END
 EOF
 
 done
@@ -371,7 +392,7 @@ fi
 sleep "\$JUKEBOX_OPEN_DELAY"
 
 # ============================================================
-# GET REAL SERVER IP
+# GET ACTUAL SERVER IP
 # ============================================================
 
 IP="\$(
@@ -397,51 +418,33 @@ echo ""
 echo -e "\${COLOR_BORDER}━━━━━━━━━━ HOW TO OPERATE JUKEBOX ━━━━━━━━━━\${COLOR_RESET}"
 echo ""
 
-# ------------------------------------------------------------
-# 1. JUKEBOX
-# ------------------------------------------------------------
-
+# 1 - JUKEBOX
 echo -e "\${COLOR_NUMBER}1.\${COLOR_RESET} \${COLOR_JUKEBOX}🎤 JUKEBOX\${COLOR_RESET}"
 echo -e "   \${COLOR_TITLE}Start manually:\${COLOR_RESET} \${COLOR_LINK}jukebox\${COLOR_RESET}"
 echo ""
 
-# ------------------------------------------------------------
-# 2. PLAYER
-# ------------------------------------------------------------
-
+# 2 - PLAYER
 echo -e "\${COLOR_NUMBER}2.\${COLOR_RESET} \${COLOR_TITLE}Player:\${COLOR_RESET}"
 echo -e "   \${COLOR_PLAYER}📱 PLAYER IP:\${COLOR_RESET}  \${COLOR_LINK}\${PLAYER_URL}\${COLOR_RESET}"
 echo -e "   \${COLOR_INFO}Opens automatically after \${COLOR_LINK}\${JUKEBOX_OPEN_DELAY}\${COLOR_INFO} second(s).\${COLOR_RESET}"
 echo ""
 
-# ------------------------------------------------------------
-# 3. AUTO START
-# ------------------------------------------------------------
-
+# 3 - AUTO START
 echo -e "\${COLOR_NUMBER}3.\${COLOR_RESET} \${COLOR_TITLE}Auto Start:\${COLOR_RESET}"
 echo "   Jukebox starts automatically when Termux opens."
 echo ""
 
-# ------------------------------------------------------------
-# 4. ALREADY RUNNING
-# ------------------------------------------------------------
-
+# 4 - ALREADY RUNNING
 echo -e "\${COLOR_NUMBER}4.\${COLOR_RESET} \${COLOR_TITLE}Already running:\${COLOR_RESET}"
 echo "   No second server."
 echo ""
 
-# ------------------------------------------------------------
-# 5. STOP
-# ------------------------------------------------------------
-
+# 5 - STOP
 echo -e "\${COLOR_NUMBER}5.\${COLOR_RESET} \${COLOR_TITLE}Stop Jukebox:\${COLOR_RESET}"
 echo -e "   \${COLOR_COMMAND}killjukebox\${COLOR_RESET}"
 echo ""
 
-# ------------------------------------------------------------
-# 6. SERVER ADDRESS
-# ------------------------------------------------------------
-
+# 6 - SERVER ADDRESS
 echo -e "\${COLOR_NUMBER}6.\${COLOR_RESET} \${COLOR_TITLE}Server address:\${COLOR_RESET}"
 echo ""
 
@@ -449,9 +452,7 @@ echo -e "   \${COLOR_PLAYER}📱 PLAYER IP:\${COLOR_RESET}  \${COLOR_LINK}\${PLA
 echo -e "   \${COLOR_REMOTE}🎛️ REMOTE IP:\${COLOR_RESET}  \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
 
 echo ""
-
 echo -e "\${COLOR_BORDER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${COLOR_RESET}"
-
 echo ""
 
 # ============================================================
@@ -482,8 +483,7 @@ BLACK = "\033[48;2;${QR_BLACK_R};${QR_BLACK_G};${QR_BLACK_B}m"
 WHITE = "\033[48;2;${QR_WHITE_R};${QR_WHITE_G};${QR_WHITE_B}m"
 RESET = "\033[0m"
 
-# Two terminal cells per QR module.
-# Keeps QR proportions correct on normal terminal fonts.
+# Two spaces preserve QR width/proportion
 for row in matrix:
     line = ""
 
@@ -494,9 +494,7 @@ for row in matrix:
 PY
 
 echo ""
-
 echo -e "\${COLOR_PLAYER}📱 Player:\${COLOR_RESET} \${COLOR_LINK}\${PLAYER_URL}\${COLOR_RESET}"
-
 echo ""
 
 # ============================================================
@@ -527,8 +525,7 @@ BLACK = "\033[48;2;${QR_BLACK_R};${QR_BLACK_G};${QR_BLACK_B}m"
 WHITE = "\033[48;2;${QR_WHITE_R};${QR_WHITE_G};${QR_WHITE_B}m"
 RESET = "\033[0m"
 
-# Two terminal cells per QR module.
-# Keeps QR proportions correct on normal terminal fonts.
+# Two spaces preserve QR width/proportion
 for row in matrix:
     line = ""
 
@@ -539,17 +536,14 @@ for row in matrix:
 PY
 
 echo ""
-
 echo -e "\${COLOR_REMOTE}🎛️ Remote:\${COLOR_RESET} \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
-
 echo ""
 
 echo -e "\${COLOR_BORDER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${COLOR_RESET}"
-
 echo ""
 
 # ============================================================
-# OPEN PLAYER
+# OPEN PLAYER AUTOMATICALLY
 # ============================================================
 
 am start \
@@ -568,17 +562,17 @@ chmod +x "$J/autorun_jukebox.sh"
 for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
 
     sed -i \
-        '/# JUKEBOX AUTORUN v10\.5\.48 START/,/# JUKEBOX AUTORUN v10\.5\.48 END/d' \
+        '/# JUKEBOX AUTORUN v10\.5\.49 START/,/# JUKEBOX AUTORUN v10\.5\.49 END/d' \
         "$RC"
 
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX AUTORUN v10.5.48 START
+# JUKEBOX AUTORUN v10.5.49 START
 if [[ $- == *i* && -z "${JUKEBOX_AUTORUN_DONE:-}" ]]; then
     export JUKEBOX_AUTORUN_DONE=1
     "$HOME/jukebox/autorun_jukebox.sh"
 fi
-# JUKEBOX AUTORUN v10.5.48 END
+# JUKEBOX AUTORUN v10.5.49 END
 EOF
 
 done
@@ -589,40 +583,36 @@ done
 
 echo
 echo "========================================"
-echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.48 INSTALLED${COLOR_RESET}"
+echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.49 INSTALLED${COLOR_RESET}"
 echo "========================================"
 echo
 
-echo -e "GitHub : ${COLOR_LINK}$REPO${COLOR_RESET}"
-echo -e "Server : ${COLOR_LINK}$SERVER${COLOR_RESET}"
-echo -e "Manual : ${COLOR_JUKEBOX}jukebox${COLOR_RESET}"
-echo -e "Stop   : ${COLOR_ERROR}killjukebox${COLOR_RESET}"
-echo -e "AutoRun: ${COLOR_SUCCESS}enabled${COLOR_RESET}"
-echo -e "Delay  : ${COLOR_WARNING}${JUKEBOX_OPEN_DELAY} second${COLOR_RESET}"
-echo -e "QR     : ${COLOR_PLAYER}Player + Remote${COLOR_RESET}"
+echo -e "GitHub      : ${COLOR_LINK}$REPO${COLOR_RESET}"
+echo -e "Server Name : ${COLOR_JUKEBOX}$SERVER_NAME${COLOR_RESET}"
+echo -e "Server File : ${COLOR_LINK}$SERVER${COLOR_RESET}"
+echo -e "Manual      : ${COLOR_JUKEBOX}jukebox${COLOR_RESET}"
+echo -e "Stop        : ${COLOR_ERROR}killjukebox${COLOR_RESET}"
+echo -e "AutoRun     : ${COLOR_SUCCESS}enabled${COLOR_RESET}"
+echo -e "Delay       : ${COLOR_WARNING}${JUKEBOX_OPEN_DELAY} second${COLOR_RESET}"
+echo -e "QR          : ${COLOR_PLAYER}Player + Remote${COLOR_RESET}"
 
 echo
-
 echo "========================================"
 echo -e "${COLOR_TITLE}SETTINGS${COLOR_RESET}"
 echo "========================================"
 echo
 
-echo "Delay:"
-echo "  JUKEBOX_OPEN_DELAY=$JUKEBOX_OPEN_DELAY"
+echo -e "SERVER_NAME:"
+echo -e "  ${COLOR_JUKEBOX}${SERVER_NAME}${COLOR_RESET}"
+
+echo
+echo -e "JUKEBOX_OPEN_DELAY:"
+echo -e "  ${COLOR_WARNING}${JUKEBOX_OPEN_DELAY}${COLOR_RESET}"
 
 echo
 echo "QR:"
 echo "  QR_BOX_SIZE=$QR_BOX_SIZE"
 echo "  QR_BORDER=$QR_BORDER"
-
-echo
-echo "Text colors:"
-echo "  COLOR_JUKEBOX"
-echo "  COLOR_PLAYER"
-echo "  COLOR_REMOTE"
-echo "  COLOR_LINK"
-echo "  COLOR_COMMAND"
 
 echo
 echo "========================================"
