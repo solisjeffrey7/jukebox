@@ -410,7 +410,7 @@ for row in matrix:
 PY
 
 echo ""
-echo -e "\${COLOR_REMOTE}🎛️ Remote:\${COLOR_RESET} \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
+echo -e " \${COLOR_REMOTE}🎛️ Remote:\${COLOR_RESET} \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
 echo ""
 
 echo -e "\${COLOR_BORDER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${COLOR_RESET}"
