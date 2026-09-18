@@ -2,7 +2,7 @@
 set -e
 
 # ============================================================
-# 🎤 JUKEBOX INSTALLER v10.5.51
+# 🎤 JUKEBOX INSTALLER v10.5.52
 # ============================================================
 
 # ============================================================
@@ -80,7 +80,7 @@ QR_WHITE_B=255
 # ============================================================
 
 echo "========================================"
-echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.51${COLOR_RESET}"
+echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.52${COLOR_RESET}"
 echo "========================================"
 
 # ============================================================
@@ -140,11 +140,105 @@ fi
 echo -e "${COLOR_SUCCESS}✅ qrcode OK${COLOR_RESET}"
 
 # ============================================================
-# DIRECTORIES
+# DIRECTORIES / STORAGE
 # ============================================================
 
 mkdir -p "$BIN"
-mkdir -p "$KARAOKE"
+
+echo
+echo "🔎 Checking Termux shared storage..."
+
+# ------------------------------------------------------------
+# IMPORTANT:
+# Do NOT create ~/storage/shared manually.
+#
+# Termux creates ~/storage/shared as a symlink after:
+#
+#     termux-setup-storage
+#
+# This prevents creation of a fake:
+#
+#     ~/storage/shared/KARAOKE
+#
+# inside Termux's private filesystem.
+# ------------------------------------------------------------
+
+if [ ! -L "$HOME/storage/shared" ]; then
+
+    echo
+    echo -e "${COLOR_WARNING}📱 Termux shared storage is not configured.${COLOR_RESET}"
+    echo "🔐 Requesting Android storage permission..."
+    echo
+
+    termux-setup-storage
+
+    echo
+    echo "⏳ Waiting for storage permission..."
+    sleep 2
+
+fi
+
+# ------------------------------------------------------------
+# VERIFY SHARED STORAGE
+# ------------------------------------------------------------
+
+if [ ! -L "$HOME/storage/shared" ] || [ ! -d "$HOME/storage/shared" ]; then
+
+    echo
+    echo "========================================"
+    echo -e "${COLOR_ERROR}❌ SHARED STORAGE NOT AVAILABLE${COLOR_RESET}"
+    echo "========================================"
+    echo
+    echo "Termux could not access Android shared storage."
+    echo
+    echo "Please:"
+    echo "1. Allow storage permission."
+    echo "2. Close Termux."
+    echo "3. Open Termux again."
+    echo "4. Run this installer again."
+    echo
+
+    exit 1
+
+fi
+
+echo
+echo -e "${COLOR_SUCCESS}✅ Android shared storage OK${COLOR_RESET}"
+echo "   $HOME/storage/shared"
+
+# ------------------------------------------------------------
+# SHOW ACTUAL STORAGE TARGET
+# ------------------------------------------------------------
+
+REAL_STORAGE="$(readlink -f "$HOME/storage/shared" 2>/dev/null || true)"
+
+if [ -n "$REAL_STORAGE" ]; then
+    echo "   Target: $REAL_STORAGE"
+fi
+
+# ============================================================
+# KARAOKE DIRECTORY
+# ============================================================
+
+echo
+echo "🔎 Checking KARAOKE folder..."
+
+if [ -d "$KARAOKE" ]; then
+
+    echo -e "${COLOR_SUCCESS}✅ Existing KARAOKE folder found${COLOR_RESET}"
+    echo "   $KARAOKE"
+
+else
+
+    echo -e "${COLOR_WARNING}⚠️ KARAOKE folder not found.${COLOR_RESET}"
+    echo "📁 Creating KARAOKE folder in Android shared storage..."
+
+    mkdir -p "$KARAOKE"
+
+    echo -e "${COLOR_SUCCESS}✅ KARAOKE folder created${COLOR_RESET}"
+    echo "   $KARAOKE"
+
+fi
 
 # ============================================================
 # GITHUB REPOSITORY
@@ -335,11 +429,12 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
         '/# JUKEBOX AUTORUN v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* START/,/# JUKEBOX AUTORUN v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* END/d' \
         "$RC"
 
-    # Remove new generic blocks if installer is run again
+    # Remove generic JUKEBOX block
     sed -i \
         '/# JUKEBOX START/,/# JUKEBOX END/d' \
         "$RC"
 
+    # Remove generic AUTORUN block
     sed -i \
         '/# JUKEBOX AUTORUN START/,/# JUKEBOX AUTORUN END/d' \
         "$RC"
@@ -643,7 +738,7 @@ echo -e "${COLOR_SUCCESS}✅ AutoRun hook installed${COLOR_RESET}"
 
 echo
 echo "========================================"
-echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.51 INSTALLED${COLOR_RESET}"
+echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.52 INSTALLED${COLOR_RESET}"
 echo "========================================"
 echo
 
@@ -655,7 +750,29 @@ echo -e "Stop        : ${COLOR_ERROR}killjukebox${COLOR_RESET}"
 echo -e "AutoRun     : ${COLOR_SUCCESS}enabled${COLOR_RESET}"
 echo -e "Delay       : ${COLOR_WARNING}${JUKEBOX_OPEN_DELAY} second${COLOR_RESET}"
 echo -e "QR          : ${COLOR_PLAYER}Player + Remote${COLOR_RESET}"
+echo -e "KARAOKE     : ${COLOR_PLAYER}$KARAOKE${COLOR_RESET}"
 echo -e "Preview     : ${COLOR_PLAYER}$KARAOKE/preview.png${COLOR_RESET}"
+
+echo
+echo "========================================"
+echo -e "${COLOR_TITLE}STORAGE${COLOR_RESET}"
+echo "========================================"
+echo
+
+echo -e "Shared Storage:"
+echo -e "  ${COLOR_SUCCESS}$HOME/storage/shared${COLOR_RESET}"
+
+REAL_STORAGE="$(readlink -f "$HOME/storage/shared" 2>/dev/null || true)"
+
+if [ -n "$REAL_STORAGE" ]; then
+    echo
+    echo "Actual Target:"
+    echo "  $REAL_STORAGE"
+fi
+
+echo
+echo "KARAOKE:"
+echo "  $KARAOKE"
 
 echo
 echo "========================================"
