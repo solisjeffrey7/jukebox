@@ -10,7 +10,7 @@ set -e
 # ============================================================
 
 # Change the base server filename here only
-SERVER_NAME="server_v2.py"
+SERVER_NAME="server_v2_script.py"
 
 J="$HOME/jukebox"
 BASE_SERVER="$J/$SERVER_NAME"
