@@ -325,7 +325,7 @@ echo -e "\${COLOR_NUMBER}6.\${COLOR_RESET} \${COLOR_TITLE}Server address:\${COLO
 echo ""
 
 echo -e "   \${COLOR_PLAYER}📱 PLAYER IP:\${COLOR_RESET}  \${COLOR_LINK}\${PLAYER_URL}\${COLOR_RESET}"
-echo -e "   \${COLOR_REMOTE} 🎛️ REMOTE IP:\${COLOR_RESET}  \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
+echo -e "   \${COLOR_REMOTE}   🎛️ REMOTE IP:\${COLOR_RESET}  \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
 
 echo ""
 echo -e "\${COLOR_BORDER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${COLOR_RESET}"
