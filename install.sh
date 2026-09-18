@@ -2,7 +2,7 @@
 set -e
 
 # ============================================================
-# 🎤 JUKEBOX INSTALLER v10.5.50
+# 🎤 JUKEBOX INSTALLER v10.5.51
 # ============================================================
 
 # ============================================================
@@ -80,7 +80,7 @@ QR_WHITE_B=255
 # ============================================================
 
 echo "========================================"
-echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.50${COLOR_RESET}"
+echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.51${COLOR_RESET}"
 echo "========================================"
 
 # ============================================================
@@ -315,6 +315,40 @@ EOF
 chmod +x "$KILLER"
 
 # ============================================================
+# CLEAN OLD JUKEBOX ENTRIES
+# ============================================================
+
+echo
+echo "🧹 Cleaning old Jukebox entries..."
+
+for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
+
+    touch "$RC"
+
+    # Remove old versioned JUKEBOX command blocks
+    sed -i \
+        '/# JUKEBOX v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* START/,/# JUKEBOX v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* END/d' \
+        "$RC"
+
+    # Remove old versioned AUTORUN blocks
+    sed -i \
+        '/# JUKEBOX AUTORUN v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* START/,/# JUKEBOX AUTORUN v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]* END/d' \
+        "$RC"
+
+    # Remove new generic blocks if installer is run again
+    sed -i \
+        '/# JUKEBOX START/,/# JUKEBOX END/d' \
+        "$RC"
+
+    sed -i \
+        '/# JUKEBOX AUTORUN START/,/# JUKEBOX AUTORUN END/d' \
+        "$RC"
+
+done
+
+echo -e "${COLOR_SUCCESS}✅ Old Jukebox entries cleaned${COLOR_RESET}"
+
+# ============================================================
 # ZSH / BASH COMMANDS
 # ============================================================
 
@@ -322,22 +356,20 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
 
     touch "$RC"
 
-    sed -i \
-        '/# JUKEBOX v10\.5\.50 START/,/# JUKEBOX v10\.5\.50 END/d' \
-        "$RC"
-
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX v10.5.50 START
+# JUKEBOX START
 export PATH="$HOME/bin:$PATH"
 
 alias jukebox="pkill -f server_v2.py; cd ~/jukebox; python3 server_v2.py"
 
 alias killjukebox="pkill -f server_v2.py"
-# JUKEBOX v10.5.50 END
+# JUKEBOX END
 EOF
 
 done
+
+echo -e "${COLOR_SUCCESS}✅ Shell commands installed${COLOR_RESET}"
 
 # ============================================================
 # AUTORUN SCRIPT
@@ -578,27 +610,32 @@ EOF
 
 chmod +x "$J/autorun_jukebox.sh"
 
+echo -e "${COLOR_SUCCESS}✅ AutoRun script installed${COLOR_RESET}"
+
 # ============================================================
 # AUTORUN HOOK
 # ============================================================
 
 for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
 
+    # Remove any previous generic autorun block
     sed -i \
-        '/# JUKEBOX AUTORUN v10\.5\.50 START/,/# JUKEBOX AUTORUN v10\.5\.50 END/d' \
+        '/# JUKEBOX AUTORUN START/,/# JUKEBOX AUTORUN END/d' \
         "$RC"
 
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX AUTORUN v10.5.50 START
+# JUKEBOX AUTORUN START
 if [[ $- == *i* && -z "${JUKEBOX_AUTORUN_DONE:-}" ]]; then
     export JUKEBOX_AUTORUN_DONE=1
     "$HOME/jukebox/autorun_jukebox.sh"
 fi
-# JUKEBOX AUTORUN v10.5.50 END
+# JUKEBOX AUTORUN END
 EOF
 
 done
+
+echo -e "${COLOR_SUCCESS}✅ AutoRun hook installed${COLOR_RESET}"
 
 # ============================================================
 # FINAL
@@ -606,7 +643,7 @@ done
 
 echo
 echo "========================================"
-echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.50 INSTALLED${COLOR_RESET}"
+echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.51 INSTALLED${COLOR_RESET}"
 echo "========================================"
 echo
 
