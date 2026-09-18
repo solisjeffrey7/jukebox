@@ -2,7 +2,7 @@
 set -e
 
 # ============================================================
-# 🎤 JUKEBOX INSTALLER v10.5.46
+# 🎤 JUKEBOX INSTALLER v10.5.47
 # ============================================================
 
 J="$HOME/jukebox"
@@ -46,8 +46,8 @@ COLOR_RESET="\033[0m"
 # 3 = large
 QR_BOX_SIZE=1
 
-# White space around QR
-QR_BORDER=4
+# Space around QR
+QR_BORDER=2
 
 # QR BLACK COLOR
 QR_BLACK_R=0
@@ -64,7 +64,7 @@ QR_WHITE_B=255
 # ============================================================
 
 echo "========================================"
-echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.46${COLOR_RESET}"
+echo -e "${COLOR_JUKEBOX}🎤 JUKEBOX INSTALLER v10.5.47${COLOR_RESET}"
 echo "========================================"
 
 # ============================================================
@@ -176,18 +176,18 @@ for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
     touch "$RC"
 
     sed -i \
-        '/# JUKEBOX v10\.5\.46 START/,/# JUKEBOX v10\.5\.46 END/d' \
+        '/# JUKEBOX v10\.5\.47 START/,/# JUKEBOX v10\.5\.47 END/d' \
         "$RC"
 
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX v10.5.46 START
+# JUKEBOX v10.5.47 START
 export PATH="$HOME/bin:$PATH"
 
 alias jukebox="pkill -f server_v2.py; cd ~/jukebox; python3 server_v2.py"
 
 alias killjukebox="pkill -f server_v2.py"
-# JUKEBOX v10.5.46 END
+# JUKEBOX v10.5.47 END
 EOF
 
 done
@@ -302,7 +302,7 @@ echo ""
 # 2 - PLAYER
 echo -e "\${COLOR_NUMBER}2.\${COLOR_RESET} \${COLOR_TITLE}Player:\${COLOR_RESET}"
 echo -e "   \${COLOR_PLAYER}📱 PLAYER IP:\${COLOR_RESET}  \${COLOR_LINK}\${PLAYER_URL}\${COLOR_RESET}"
-echo -e "   \${COLOR_INFO}Opens automatically after \${COLOR_LINK}\${JUKEBOX_OPEN_DELAY}\${COLOR_INFO} seconds.\${COLOR_RESET}"
+echo -e "   \${COLOR_INFO}Opens automatically after \${COLOR_LINK}\${JUKEBOX_OPEN_DELAY}\${COLOR_INFO} second(s).\${COLOR_RESET}"
 echo ""
 
 # 3 - AUTO START
@@ -325,7 +325,7 @@ echo -e "\${COLOR_NUMBER}6.\${COLOR_RESET} \${COLOR_TITLE}Server address:\${COLO
 echo ""
 
 echo -e "   \${COLOR_PLAYER}📱 PLAYER IP:\${COLOR_RESET}  \${COLOR_LINK}\${PLAYER_URL}\${COLOR_RESET}"
-echo -e "   \${COLOR_REMOTE}   🎛️ REMOTE IP:\${COLOR_RESET}  \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
+echo -e "   \${COLOR_REMOTE}     🎛️ REMOTE IP:\${COLOR_RESET}  \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
 
 echo ""
 echo -e "\${COLOR_BORDER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${COLOR_RESET}"
@@ -359,11 +359,12 @@ BLACK = "\033[48;2;${QR_BLACK_R};${QR_BLACK_G};${QR_BLACK_B}m"
 WHITE = "\033[48;2;${QR_WHITE_R};${QR_WHITE_G};${QR_WHITE_B}m"
 RESET = "\033[0m"
 
+# Two spaces keep the QR square on normal terminal fonts.
 for row in matrix:
     line = ""
 
     for cell in row:
-        line += (BLACK if cell else WHITE) + " "
+        line += (BLACK if cell else WHITE) + "  "
 
     print(line + RESET)
 PY
@@ -400,17 +401,18 @@ BLACK = "\033[48;2;${QR_BLACK_R};${QR_BLACK_G};${QR_BLACK_B}m"
 WHITE = "\033[48;2;${QR_WHITE_R};${QR_WHITE_G};${QR_WHITE_B}m"
 RESET = "\033[0m"
 
+# Two spaces keep the QR square on normal terminal fonts.
 for row in matrix:
     line = ""
 
     for cell in row:
-        line += (BLACK if cell else WHITE) + " "
+        line += (BLACK if cell else WHITE) + "  "
 
     print(line + RESET)
 PY
 
 echo ""
-echo -e " \${COLOR_REMOTE}🎛️ Remote:\${COLOR_RESET} \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
+echo -e "\${COLOR_REMOTE}🎛️ Remote:\${COLOR_RESET} \${COLOR_LINK}\${REMOTE_URL}\${COLOR_RESET}"
 echo ""
 
 echo -e "\${COLOR_BORDER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${COLOR_RESET}"
@@ -436,17 +438,17 @@ chmod +x "$J/autorun_jukebox.sh"
 for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
 
     sed -i \
-        '/# JUKEBOX AUTORUN v10\.5\.46 START/,/# JUKEBOX AUTORUN v10\.5\.46 END/d' \
+        '/# JUKEBOX AUTORUN v10\.5\.47 START/,/# JUKEBOX AUTORUN v10\.5\.47 END/d' \
         "$RC"
 
     cat >> "$RC" <<'EOF'
 
-# JUKEBOX AUTORUN v10.5.46 START
+# JUKEBOX AUTORUN v10.5.47 START
 if [[ $- == *i* && -z "${JUKEBOX_AUTORUN_DONE:-}" ]]; then
     export JUKEBOX_AUTORUN_DONE=1
     "$HOME/jukebox/autorun_jukebox.sh"
 fi
-# JUKEBOX AUTORUN v10.5.46 END
+# JUKEBOX AUTORUN v10.5.47 END
 EOF
 
 done
@@ -457,7 +459,7 @@ done
 
 echo
 echo "========================================"
-echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.46 INSTALLED${COLOR_RESET}"
+echo -e "${COLOR_SUCCESS}✅ JUKEBOX v10.5.47 INSTALLED${COLOR_RESET}"
 echo "========================================"
 echo
 
