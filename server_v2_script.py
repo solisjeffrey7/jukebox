@@ -23,7 +23,7 @@ import urllib.request
 import urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
-JUKEBOX_VERSION = "10.5.06"
+JUKEBOX_VERSION="10.5.22"
 
 
 # ============================================================
@@ -205,7 +205,8 @@ players = {}
 players_lock = threading.RLock()
 last_scan = 0
 
-PLAYER_IDLE_TIMEOUT = 600  # Player stays alive while heartbeat is received; closed tabs expire after timeout
+PLAYER_IDLE_TIMEOUT = 600  # Cleanup: remove abandoned Player state after 10 minutes
+PLAYER_ACTIVE_WINDOW = 6  # Heartbeat freshness: Player is considered active if seen within 6s
 
 # Incremental filesystem index: unchanged folders are not re-parsed every scan.
 scan_cache = {}
@@ -1227,7 +1228,7 @@ document.addEventListener("dragover",e=>{if(!e.target.closest(".queue-item"))e.p
 
 <div class="controls">
 <button onclick="previousSong()">⏮ PREVIOUS</button>
-<button id="playPauseButton" onclick="togglePlay()">▶ PLAY / ⏸ PAUSE</button>
+<button id="playPauseButton" onclick="togglePlay()">▶ PLAY</button>
 <button class="next-button" onclick="nextSong()">⏭ NEXT</button>
 </div>
 </section>
@@ -1411,12 +1412,24 @@ function applyDroppedCurrentSong(current){
     currentSongId=current.id;
 }
 
+function updatePlayPauseButton(playing){
+    const button=document.getElementById("playPauseButton");
+    if(!button)return;
+    button.textContent=playing?"⏸ PAUSE":"▶ PLAY";
+    button.setAttribute("aria-label",playing?"Pause":"Play");
+}
+
 async function updatePlayer(){
     if(playerUpdateInFlight)return;
     playerUpdateInFlight=true;
 
     try{
         const data=await api("/api/player");
+
+        // Always keep the visible button in sync with the server state.
+        if(typeof data.playing==="boolean"){
+            updatePlayPauseButton(data.playing);
+        }
 
         // UI/state changes are processed only when the server version changes.
         if(data.version!==lastPlayerVersion){
@@ -1668,6 +1681,8 @@ async function togglePlay(){
         const data=await api("/api/player/toggle",{method:"POST"});
 
         if(data.ok){
+            updatePlayPauseButton(!!data.playing);
+
             if(currentIsYouTube || videoWrapper.classList.contains("youtube-active")){
                 const applyYT=()=>{
                     if(!ytPlayer || !ytPlayerReady)return false;
@@ -2423,6 +2438,300 @@ internetStatusTimer=setInterval(refreshInternetStatus,15000);
 # PLAYER CLAIM
 # =========================================================
 
+
+SINGLEPLAYER_HTML = r"""
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jukebox Single Player</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#090909;color:#fff;font-family:Arial,sans-serif}.h{position:sticky;top:0;z-index:1000;height:56px;padding:0 12px;display:flex;align-items:center;justify-content:space-between;background:#111;border-bottom:1px solid #292929}.logo{font-weight:900}.st{font-size:10px;color:#888}.main{max-width:1050px;margin:auto;padding:12px;padding-top:68px}.box{position:relative;z-index:10;background:#111;border:1px solid #292929;border-radius:12px;overflow:hidden}.vw{position:relative;aspect-ratio:16/9;background:#000}video{width:100%;height:100%;object-fit:contain;background:#000}#yt{display:none;position:absolute;inset:0}#yt iframe{width:100%;height:100%;border:0}.ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#666}.info{padding:10px 13px;border-top:1px solid #292929}.t{font-weight:800;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.a{color:#999;font-size:13px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ctl{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:7px;padding:10px 13px 13px}.ctl button{height:44px;border:1px solid #3a3a3a;border-radius:8px;background:#222;color:#fff;font-weight:900}.ctl .p{background:#fff;color:#000}.sw{position:sticky;top:56px;z-index:998;background:#090909;padding:9px 0}.searchbar{position:fixed;left:0;right:0;top:56px;z-index:999;background:#090909;padding:8px 12px;box-shadow:0 2px 8px rgba(0,0,0,.45)}.searchrow{display:flex;gap:7px;align-items:center;width:100%;max-width:1050px;margin:auto}.searchrow .search{flex:1;min-width:0}.ytbtn{height:44px;padding:0 12px;border:1px solid #3a3a3a;border-radius:9px;background:#222;color:#fff;font-size:10px;font-weight:900;white-space:nowrap}.below-results{width:100%;margin:0;border-radius:0;border-left:0;border-right:0;border-bottom:0}.ytbtn:active{background:#333}.search{width:100%;height:43px;border-radius:8px;border:1px solid #353535;background:#151515;color:#fff;padding:0 12px}.list{border:1px solid #292929;border-radius:12px;overflow:hidden;background:#111}.lh{padding:11px 13px;border-bottom:1px solid #292929;font-weight:900;display:flex;justify-content:space-between}.cnt{font-size:11px;color:#777}.row{display:grid;grid-template-columns:40px minmax(0,1fr) 60px;gap:9px;align-items:center;padding:9px 10px;border-bottom:1px solid #202020}.row:last-child{border:0}.th{width:40px;height:40px;background:#222;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#888;overflow:hidden}.th img{width:100%;height:100%;object-fit:cover}.sn{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sa{font-size:11px;color:#888;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pb{height:33px;border:1px solid #3a3a3a;border-radius:6px;background:#222;color:#fff;font-size:11px;font-weight:900}.empty{text-align:center;color:#777;padding:25px}.more{text-align:center;color:#777;padding:12px;font-size:11px}.ytrow{display:grid;grid-template-columns:82px minmax(0,1fr) 55px;gap:9px;align-items:center;padding:8px 10px;border-bottom:1px solid #202020}
+.ytrow:last-child{border:0}.ytthumb{width:82px;height:46px;object-fit:cover;background:#222;border-radius:5px}
+.ytname{font-weight:700;font-size:12px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ytartist{font-size:10px;color:#888;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.youtube-test-state{font-size:9px;font-weight:800;margin-top:3px;color:#8bc34a}.youtube-test-state.testing{color:#777}.youtube-test-state.timeout{color:#c5a85b}.youtube-removing{opacity:.15;transition:opacity .18s ease}
+.ytplay{height:32px;border:1px solid #3a3a3a;border-radius:6px;background:#222;color:#fff;font-size:10px;font-weight:900}
+.ytloading{text-align:center;color:#888;padding:12px;font-size:11px}
+</style></head><body>
+<header class="h"><div class="logo">JUKEBOX SINGLE PLAYER</div><div id="st" class="st">READY</div></header>
+<main class="main"><section class="box"><div class="vw"><div id="ph" class="ph">SELECT A SONG</div><video id="v" playsinline preload="metadata"></video><div id="yt"></div></div><div class="info"><div id="t" class="t">Please select a song</div><div id="a" class="a">—</div></div><div class="ctl"><button id="prev">⏮ PREVIOUS</button><button id="play" class="p">▶ PLAY</button><button id="party" onclick="location.href='/player'">PLAYER / REMOTE</button></div></section><div class="sw"><div class="searchbar">
+ <div class="searchrow">
+  <input id="q" class="search" placeholder="Search local songs..." autocomplete="off">
+ </div>
+</div></div><section class="list"><div class="lh"><span>SONGLIST</span><span id="cnt" class="cnt">0 songs</span></div><div id="list"></div>
+ <button id="ytBtn" class="ytbtn below-results">LOAD FROM YOUTUBE</button>
+</section>
+<section id="ytSection" class="list" style="display:none;margin-top:10px">
+ <div class="lh"><span>YOUTUBE RESULTS</span><span id="ytCnt" class="cnt">0</span></div>
+ <div id="ytList"></div>
+ <button id="ytMore" style="display:none;width:100%;height:42px;border:0;border-top:1px solid #292929;background:#171717;color:#fff;font-weight:900">LOAD MORE YOUTUBE</button>
+</section></main>
+<script>
+const V=document.getElementById('v'),YTF=document.getElementById('yt'),PH=document.getElementById('ph'),T=document.getElementById('t'),A=document.getElementById('a'),L=document.getElementById('list'),Q=document.getElementById('q'),C=document.getElementById('cnt'),ST=document.getElementById('st'),P=document.getElementById('play');
+let token=sessionStorage.getItem('jukebox_singleplayer_token')||(crypto.randomUUID?crypto.randomUUID():Date.now()+''+Math.random());sessionStorage.setItem('jukebox_singleplayer_token',token);let cur=null,songs=[],ytp=null,ytid=null;
+let songOffset=0,songTotal=0,songHasMore=false,songLoading=false,songGeneration=0;
+let ytResults=[],ytVisible=20,ytLoading=false,ytSearchGeneration=0,ytLoadRequested=false;
+const YTS=document.getElementById('ytSection'),YTL=document.getElementById('ytList'),YTM=document.getElementById('ytMore'),YTC=document.getElementById('ytCnt');
+// YouTube remains locked until the user explicitly taps LOAD FROM YOUTUBE.
+ytLoadRequested=false;
+document.getElementById('q').addEventListener('input',()=>{
+ ytLoadRequested=false;
+ YTS.style.display='none';
+ YTL.innerHTML='';
+ YTM.style.display='none';
+ YTC.textContent='0';
+});
+
+async function api(u,o={}){o.headers=Object.assign({},o.headers||{}, {'X-Jukebox-Player-Token':token});let r=await fetch(u,Object.assign({},o,{cache:'no-store'}));let d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.message||r.status);return d}
+async function claim(){try{let d=await api('/api/player/claim',{method:'POST'});ST.textContent=d.ok?'READY':'ERROR'}catch(e){ST.textContent='ERROR'}}
+function destroyYT(){try{if(ytp)ytp.destroy()}catch(e){}ytp=null;YTF.innerHTML='';YTF.style.display='none';ytid=null}
+function show(s,auto){
+ if(!s)return;
+ cur=s.id;
+ PH.style.display='none';
+ T.textContent=(s.code?s.code+' - ':'')+(s.title||'');
+ A.textContent=s.artist||'Unknown artist';
+
+ const isYT=!!(s.youtube&&s.youtube_id);
+
+ if(isYT){
+  // Always remove the local media before creating YouTube.
+  try{V.pause()}catch(e){}
+  V.removeAttribute('src');
+  V.load();
+  V.style.display='none';
+
+  // Remove any previous YouTube instance/container.
+  try{if(ytp){ytp.stopVideo();ytp.destroy()}}catch(e){}
+  ytp=null; ytid=null;
+  YTF.innerHTML='';
+  YTF.style.display='block';
+
+  const startYT=()=>makeYT(s.youtube_id);
+  if(window.YT&&typeof window.YT.Player==='function') startYT();
+  else {
+   window.onYouTubeIframeAPIReady=startYT;
+   if(!document.getElementById('ytapi')){
+    const sc=document.createElement('script');
+    sc.id='ytapi';sc.src='https://www.youtube.com/iframe_api';
+    document.head.appendChild(sc);
+   }
+  }
+ }else{
+  // Always destroy/remove YouTube before creating local video.
+  try{if(ytp){ytp.stopVideo();ytp.destroy()}}catch(e){}
+  ytp=null;ytid=null;
+  YTF.innerHTML='';
+  YTF.style.display='none';
+
+  V.style.display='block';
+  try{V.pause()}catch(e){}
+  V.removeAttribute('src');
+  V.load();
+  V.src='/video/'+(s.path||'').split('/').map(encodeURIComponent).join('/');
+  V.load();
+  if(auto)V.play().catch(()=>{});
+ }
+}
+function makeYT(id){if(!id || !window.YT || typeof window.YT.Player!=='function')return;YTF.innerHTML='';ytp=new window.YT.Player(YTF,{videoId:id,width:'100%',height:'100%',playerVars:{autoplay:1,playsinline:1,rel:0},events:{onStateChange:e=>{}}})}
+async function play(id){
+ try{
+  let d=await api('/api/player/play',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({id})
+  });
+  if(!d.current)throw new Error(d.message||'No current song returned');
+  show(d.current,true);
+  P.textContent='⏸ PAUSE';
+ }catch(e){
+  console.error('Single Player play error:',e);
+  alert(e.message||'Failed to play song');
+ }
+}
+async function toggle(){try{let d=await api('/api/player/toggle',{method:'POST'});P.textContent=d.playing?'⏸ PAUSE':'▶ PLAY';if(ytp){d.playing?ytp.playVideo():ytp.pauseVideo()}else{d.playing?V.play().catch(()=>{}):V.pause()}}catch(e){}}
+async function next(){try{let d=await api('/api/player/next',{method:'POST'});if(d.current){show(d.current,true);P.textContent='⏸ PAUSE'}}catch(e){}}
+async function prev(){try{let d=await api('/api/player/previous',{method:'POST'});if(d.current){show(d.current,true);P.textContent='⏸ PAUSE'}}catch(e){}}
+async function load(reset=true){
+ if(songLoading)return;
+ if(reset){songGeneration++;songOffset=0;songTotal=0;songHasMore=false;songs=[];L.innerHTML=''}
+ songLoading=true;
+ const generation=songGeneration;
+ try{
+  const params=new URLSearchParams({offset:String(songOffset),limit:'100',search:Q.value});
+  const d=await api('/api/songs?'+params.toString());
+  if(generation!==songGeneration)return;
+  const page=d.songs||[];
+  if(reset)songs=page;else songs=songs.concat(page);
+  songOffset=songs.length;
+  songTotal=Number(d.count||songs.length);
+  songHasMore=!!d.has_more;
+  render();
+ }catch(e){
+  if(reset)L.innerHTML='<div class="empty">Unable to load songlist</div>';
+ }finally{songLoading=false}
+}
+async function loadMore(){
+ if(songLoading||!songHasMore)return;
+ await load(false);
+}
+function waitForYouTubeAPI(timeoutMs=10000){
+ return new Promise(resolve=>{
+  if(window.YT&&typeof window.YT.Player==='function'){resolve(true);return}
+  const started=Date.now();
+  const timer=setInterval(()=>{
+   if(window.YT&&typeof window.YT.Player==='function'){clearInterval(timer);resolve(true);return}
+   if(Date.now()-started>=timeoutMs){clearInterval(timer);resolve(false)}
+  },100);
+  if(!document.getElementById('ytapi')){
+   const s=document.createElement('script');s.id='ytapi';s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s);
+  }
+ });
+}
+function verifyYouTubeEmbed(videoId,timeoutMs=4500){
+ return new Promise(resolve=>{
+  let player=null,host=null,timer=null,finished=false;
+  const finish=status=>{
+   if(finished)return;finished=true;
+   if(timer)clearTimeout(timer);
+   try{if(player)player.destroy()}catch(e){}
+   try{if(host)host.remove()}catch(e){}
+   resolve(status);
+  };
+  timer=setTimeout(()=>finish('timeout'),timeoutMs);
+  if(!(window.YT&&typeof window.YT.Player==='function')){finish('timeout');return}
+  host=document.createElement('div');
+  host.style.cssText='position:fixed;left:-10000px;top:-10000px;width:320px;height:180px;opacity:.01;pointer-events:none';
+  document.body.appendChild(host);
+  try{
+   player=new window.YT.Player(host,{
+    width:'320',height:'180',videoId:String(videoId),
+    playerVars:{autoplay:0,controls:0,playsinline:1,rel:0,fs:0,enablejsapi:1,origin:window.location.origin},
+    events:{
+     onReady:e=>{try{e.target.mute();e.target.playVideo()}catch(err){}},
+     onStateChange:e=>{const s=Number(e.data);if(s===1||s===3)finish('ok')},
+     onError:()=>finish('error')
+    }
+   });
+  }catch(e){finish('timeout')}
+ });
+}
+async function verifyYouTubeResults(results){
+ if(!results.length)return [];
+ const ready=await waitForYouTubeAPI(10000);
+ if(!ready)return results;
+ const kept=[];
+ for(let i=0;i<results.length;i++){
+  const song=results[i];
+  const row=document.querySelector('[data-youtube-id="'+CSS.escape(String(song.youtube_id))+'"]');
+  const state=row&&row.querySelector('.youtube-test-state');
+  if(state){state.textContent='● TESTING...';state.className='youtube-test-state testing'}
+  let verdict='timeout';
+  try{verdict=await verifyYouTubeEmbed(song.youtube_id,4500)}catch(e){}
+  if(verdict==='error'){
+   if(row){row.classList.add('youtube-removing');setTimeout(()=>{try{row.remove()}catch(e){}},180)}
+   continue;
+  }
+  kept.push(song);
+  if(state){
+   state.textContent=verdict==='ok'?'✓ PLAYABLE':'• TEST TIMEOUT — KEPT';
+   state.className='youtube-test-state '+(verdict==='ok'?'playable':'timeout');
+  }
+  if(verdict==='ok'){
+   try{
+    await fetch('/api/youtube-save-playable',{
+     method:'POST',cache:'no-store',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({youtube_id:song.youtube_id,title:song.title||'',artist:song.artist||'',thumbnail:song.thumbnail||''})
+    });
+   }catch(e){}
+  }
+ }
+ return kept;
+}
+async function searchYouTube(){
+ if(!ytLoadRequested)return;
+ const query=Q.value.trim();
+ ytSearchGeneration++;
+ const gen=ytSearchGeneration;
+ ytResults=[];ytVisible=20;YTL.innerHTML='';YTM.style.display='none';YTC.textContent='0';
+ if(!query){YTS.style.display='none';return}
+ YTS.style.display='block';YTL.innerHTML='<div class="ytloading">Searching YouTube…</div>';ytLoading=true;
+ try{
+  const d=await api('/api/youtube-search?q='+encodeURIComponent(query));
+  if(gen!==ytSearchGeneration)return;
+  const results=d.results||[];
+  if(!results.length){YTL.innerHTML='<div class="empty">No YouTube results</div>';return}
+  ytResults=results;YTC.textContent=results.length+' results';renderYouTube();
+  const kept=await verifyYouTubeResults(results);
+  if(gen!==ytSearchGeneration)return;
+  ytResults=kept;YTC.textContent=kept.length+' playable result'+(kept.length===1?'':'s');renderYouTube();
+ }catch(e){
+  if(gen===ytSearchGeneration){YTL.innerHTML='<div class="empty">YouTube search unavailable</div>';YTC.textContent='0'}
+ }finally{ytLoading=false}
+}
+function renderYouTube(){
+ YTL.innerHTML='';
+ const visible=ytResults.slice(0,ytVisible);
+ if(!visible.length){YTL.innerHTML='<div class="empty">No playable YouTube results</div>';YTM.style.display='none';return}
+ const frag=document.createDocumentFragment();
+ visible.forEach(s=>{
+  const r=document.createElement('div');r.className='ytrow';r.dataset.youtubeId=String(s.youtube_id||'');
+  const img=document.createElement('img');img.className='ytthumb';img.loading='lazy';img.src=s.thumbnail||'';img.alt='';
+  const inf=document.createElement('div');
+  const n=document.createElement('div');n.className='ytname';n.textContent=s.title||'YouTube';
+  const a=document.createElement('div');a.className='ytartist';a.textContent=s.artist||'';
+  const state=document.createElement('div');state.className='youtube-test-state playable';state.textContent='✓ PLAYABLE';
+  inf.append(n,a,state);
+  const b=document.createElement('button');b.className='ytplay';b.textContent='PLAY';
+  b.onclick=e=>{e.stopPropagation();play(s.id)};
+  r.append(img,inf,b);r.onclick=()=>play(s.id);frag.appendChild(r);
+ });
+ YTL.appendChild(frag);
+ if(ytVisible<ytResults.length){YTM.style.display='block';YTM.textContent='LOAD MORE YOUTUBE ('+(ytResults.length-ytVisible)+' LEFT)'}
+ else YTM.style.display='none';
+}
+document.getElementById('ytBtn').onclick=()=>{
+ const q=Q.value.trim();
+ if(!q){Q.focus();return}
+ ytLoadRequested=true;
+ searchYouTube();
+};
+YTM.onclick=()=>{
+ ytVisible=Math.min(ytVisible+20,ytResults.length);
+ renderYouTube();
+};
+function render(){
+ let q=Q.value.trim().toLowerCase(),arr=q?songs.filter(s=>((s.title||'')+' '+(s.artist||'')).toLowerCase().includes(q)):songs;
+ C.textContent=songTotal+' song'+(songTotal===1?'':'s')+(songHasMore?' • scroll for more':'');
+ L.innerHTML='';
+ if(!arr.length){L.innerHTML='<div class="empty">No songs found</div>';return}
+ const frag=document.createDocumentFragment();
+ arr.forEach(s=>{
+  let r=document.createElement('div');r.className='row';
+  let th=document.createElement('div');th.className='th';
+  if(s.thumbnail){let im=document.createElement('img');im.src=s.thumbnail;th.appendChild(im)}else th.textContent='♪';
+  let inf=document.createElement('div');
+  let sn=document.createElement('div');sn.className='sn';sn.textContent=(s.code?s.code+' - ':'')+(s.title||'');
+  let sa=document.createElement('div');sa.className='sa';sa.textContent=s.artist||'Unknown artist';
+  inf.append(sn,sa);
+  let b=document.createElement('button');b.className='pb';b.textContent='PLAY';
+  b.onclick=e=>{e.stopPropagation();play(s.id)};
+  r.append(th,inf,b);r.onclick=()=>play(s.id);frag.appendChild(r);
+ });
+ L.appendChild(frag);
+ if(songHasMore){
+  let m=document.createElement('div');m.className='more';m.textContent='Scroll down to load more songs…';L.appendChild(m);
+ }
+}
+P.onclick=toggle;document.getElementById('prev').onclick=prev;
+Q.oninput=()=>{
+ clearTimeout(window.qt);
+ window.qt=setTimeout(()=>load(true),250);
+};
+L.addEventListener('scroll',()=>{});
+window.addEventListener('scroll',()=>{
+ if(window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-500)loadMore();
+});
+(async()=>{await claim();await load(true);setInterval(async()=>{try{let d=await api('/api/player');if(d.current&&d.current.id!==cur)show(d.current,false)}catch(e){}},2000)})();
+</script></body></html>
+"""
+
 PLAYER_CLAIM_HTML = r"""
 <!DOCTYPE html>
 <html>
@@ -2567,7 +2876,7 @@ REMOTE_HTML = r"""
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#090909;color:#fff;font-family:Arial,Helvetica,sans-serif}
 body{min-height:100vh}
-.header{position:sticky;top:0;z-index:10;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 15px;background:#111;border-bottom:1px solid #292929}
+.header{position:sticky;top:0;z-index:1000;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 15px;background:#111;border-bottom:1px solid #292929}
 .logo{font-weight:800;font-size:18px;letter-spacing:1px}
 .header-right{display:flex;align-items:center;gap:8px}
 .control{height:36px;min-width:40px;padding:0 8px;border:1px solid #3a3a3a;border-radius:6px;background:#222;color:#fff;font-size:15px;font-weight:700;cursor:pointer}
@@ -2619,7 +2928,7 @@ overflow:hidden
 .song-header{
 flex:0 0 auto;
 position:relative;
-z-index:8;
+z-index:999;
 padding:14px;
 border-bottom:1px solid #292929;
 background:#090909
@@ -3838,11 +4147,17 @@ checkConnection();
     let disconnectedShown=false;
     async function checkSelectedPlayer(){
         try{
-            const r=await fetch("/api/connection-status",{
-                cache:"no-store",
-                headers:{"X-Jukebox-Player-Token":selected}
-            });
+            const r=await fetch(
+                "/api/connection-status?player="+encodeURIComponent(selected),
+                {
+                    cache:"no-store",
+                    headers:{"X-Jukebox-Player-Token":selected}
+                }
+            );
             const d=await r.json();
+
+            if(!d.ok)return;
+
             if(!d.player_active && !disconnectedShown){
                 disconnectedShown=true;
                 const overlay=document.createElement("div");
@@ -4132,6 +4447,10 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             self.redirect("/player")
             return
 
+        if path=="/singleplayer":
+            self.send_html(SINGLEPLAYER_HTML)
+            return
+
         if path=="/player":
             self.send_html(PLAYER_CLAIM_HTML)
             return
@@ -4154,7 +4473,7 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             else:
                 cleanup_players()
                 with players_lock:
-                    active = remote_token in players and (time.time()-players[remote_token].get("last_seen",0) <= PLAYER_IDLE_TIMEOUT)
+                    active = remote_token in players and (time.time()-players[remote_token].get("last_seen",0) <= PLAYER_ACTIVE_WINDOW)
                 if active:
                     self.send_html(REMOTE_HTML)
                 else:
@@ -4336,11 +4655,12 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             result=[]
             with players_lock:
                 for token,state in players.items():
-                    if now-state.get("last_seen",0) <= PLAYER_IDLE_TIMEOUT:
+                    if now-state.get("last_seen",0) <= PLAYER_ACTIVE_WINDOW:
                         result.append({
                             "token":token,
                             "id":token[:6].upper(),
                             "last_seen":state.get("last_seen",0),
+                            "active":True,
                         })
             result.sort(key=lambda x:x["id"])
             self.send_json({"ok":True,"players":result})
@@ -4386,7 +4706,11 @@ class JukeboxHandler(BaseHTTPRequestHandler):
                     self.send_json({"ok":False,"player_active":False,"message":"Player not found"},404)
                     return
                 state["last_seen"]=time.time()
-            self.send_json({"ok":True,"player_active":True})
+            self.send_json({
+                "ok":True,
+                "player_active":True,
+                "last_seen":state["last_seen"],
+            })
             return
 
         if path=="/api/player-command":
@@ -4404,19 +4728,29 @@ class JukeboxHandler(BaseHTTPRequestHandler):
             return
         if path=="/api/connection-status":
             token=get_player_token(self)
+
+            # Remote selected-player detection can also supply the selected
+            # Player token in the query string. This keeps detection tied to
+            # the actual selected Player, not the Remote page session.
+            if not token:
+                query_token=urllib.parse.parse_qs(
+                    urllib.parse.urlparse(self.path).query
+                ).get("player",[""])[0]
+                token=normalize_player_token(query_token)
+
             now=time.time()
             with players_lock:
                 state=players.get(token) if token else None
                 last_seen=state.get("last_seen") if state else None
             age=(now-last_seen) if last_seen else None
-            active=bool(state and age is not None and age <= PLAYER_IDLE_TIMEOUT)
+            active=bool(state and age is not None and age <= PLAYER_ACTIVE_WINDOW)
 
             self.send_json({
                 "ok":True,
                 "player_active":active,
                 "last_seen":last_seen,
                 "age":round(age,2) if age is not None else None,
-                "timeout":PLAYER_IDLE_TIMEOUT
+                "timeout":PLAYER_ACTIVE_WINDOW
             })
             return
 
@@ -4640,9 +4974,35 @@ class JukeboxHandler(BaseHTTPRequestHandler):
                 return
 
             if not set_current_song(get_player_token(self),song_id):
+                # Robust fallback for YouTube search results.
+                # The browser may still have a valid yt:<video_id> result even
+                # if the in-memory search map was refreshed/cleared.
+                if song_id.startswith("yt:") and len(song_id) > 3:
+                    yt_video_id=song_id[3:].strip()
+                    if re.fullmatch(r"[A-Za-z0-9_-]{6,20}",yt_video_id):
+                        with youtube_cache_lock:
+                            fallback_song={
+                                "id":song_id,
+                                "code":"YT",
+                                "title":"YouTube",
+                                "artist":"",
+                                "filename":"YouTube",
+                                "path":"@YOUTUBE@/"+yt_video_id,
+                                "youtube":True,
+                                "youtube_id":yt_video_id,
+                                "thumbnail":""
+                            }
+                            youtube_songs[song_id]=fallback_song
+                        if set_current_song(get_player_token(self),song_id):
+                            self.send_json({
+                                "ok":True,
+                                "current":get_current_song(get_player_token(self))
+                            })
+                            return
+
                 self.send_json({
                     "ok":False,
-                    "message":"Song not found"
+                    "message":"Song not found: "+song_id
                 },404)
                 return
 
