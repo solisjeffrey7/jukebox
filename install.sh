@@ -7,7 +7,7 @@ set -e
 # Original online installation logic retained
 # ============================================================
 
-VERSION="10.5.53"
+VERSION="10.5.108"
 
 SERVER_NAME="server_v10.5.108.py"
 
