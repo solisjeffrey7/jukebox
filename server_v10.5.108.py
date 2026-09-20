@@ -20,7 +20,7 @@ import qrcode
 import urllib.request
 import urllib.error
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-JUKEBOX_VERSION = '10.5.108
+JUKEBOX_VERSION = '10.5.108'
 JUKEBOX_KEY_FILENAME = 'Jukebox.key'
 JUKEBOX_KEY_MASTER = '2dc1d5c9fe88831ad4e6fbd23e847d517905e09741168c543c043d141b5c2f37'
 JUKEBOX_KEY_MAX_BYTES = 4096
