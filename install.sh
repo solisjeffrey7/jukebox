@@ -9,7 +9,7 @@ set -e
 
 VERSION="10.5.53"
 
-SERVER_NAME="server_v2_script.py"
+SERVER_NAME="server_v10.5.108.py"
 
 J="$HOME/jukebox"
 BASE_SERVER="$J/$SERVER_NAME"
@@ -374,11 +374,11 @@ ok "Jukebox server"
 # COPY preview.png TO KARAOKE
 # ============================================================
 
-update_progress 70 "Checking preview.png..."
+update_progress 70 "Checking preview.mp4..."
 
-if [ -f "$J/preview.png" ]; then
-    if ! cp "$J/preview.png" "$KARAOKE/preview.png"; then
-        fail "Unable to copy preview.png."
+if [ -f "$J/preview.mp4" ]; then
+    if ! cp "$J/preview.mp4" "$KARAOKE/preview.mp4"; then
+        fail "Unable to copy preview.mp4."
     fi
 fi
 
@@ -539,6 +539,8 @@ print(server_v2.get_local_ip())
 PY
 )"
 
+
+PLAYER_URL_START="http://\${IP}:8080/player"
 PLAYER_URL="http://\${IP}:8080/player"
 REMOTE_URL="http://\${IP}:8080/remote"
 
@@ -641,7 +643,7 @@ echo ""
 
 am start \
     -a android.intent.action.VIEW \
-    -d "\${PLAYER_URL}" \
+    -d "\${PLAYER_URL_START}" \
     >/dev/null 2>&1 || true
 EOF
 
