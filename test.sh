@@ -1,7 +1,7 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
 
-VERSION="3.7"
+VERSION="3.8"
 
 # ============================================================
 # CONFIGURATION
@@ -22,18 +22,16 @@ ROOT="$OUTPUT_DIR"
 OFFLINE="$ROOT/offline_packages"
 BOOTSTRAP="$ROOT/bootstrap"
 CODES="$ROOT/codes"
+
 INSTALLER="$ROOT/installer.sh"
 APT_SEEN="$ROOT/.apt_seen"
 
 
 # ============================================================
-# CREATE DIRECTORIES
+# CREATE CLEAN BUILD
 # ============================================================
 
 mkdir -p "$ROOT"
-mkdir -p "$OFFLINE"
-mkdir -p "$BOOTSTRAP"
-mkdir -p "$CODES"
 
 rm -rf "$OFFLINE"
 rm -rf "$BOOTSTRAP"
@@ -48,7 +46,7 @@ touch "$APT_SEEN"
 
 
 # ============================================================
-# UI
+# HEADER
 # ============================================================
 
 clear 2>/dev/null || true
@@ -62,36 +60,40 @@ echo
 echo "Packages:"
 echo "  $TO_OFFLINE"
 echo
+echo "Codes:"
+echo "  $CODES_SOURCE"
+echo
 
 
 # ============================================================
-# BUILDER ENVIRONMENT
+# BUILDER CHECK
 # ============================================================
 
 echo "[1/7] Checking builder environment..."
 
-command -v apt-get >/dev/null 2>&1 || {
+if ! command -v apt-get >/dev/null 2>&1; then
     echo "ERROR: apt-get not found."
     exit 1
-}
+fi
 
-command -v apt-cache >/dev/null 2>&1 || {
+if ! command -v apt-cache >/dev/null 2>&1; then
     echo "ERROR: apt-cache not found."
     exit 1
-}
+fi
 
-command -v python3 >/dev/null 2>&1 || {
+if ! command -v python3 >/dev/null 2>&1; then
     echo "ERROR: python3 not found."
     exit 1
-}
+fi
 
-echo "Python detected."
+echo "[OK] apt-get"
+echo "[OK] apt-cache"
+echo "[OK] python3"
 
 if python3 -m pip --version >/dev/null 2>&1; then
-    echo "Pip detected."
+    echo "[OK] pip"
 else
-    echo "Pip not currently installed."
-    echo "This is OK."
+    echo "[INFO] pip not required for builder startup."
 fi
 
 
@@ -100,12 +102,14 @@ fi
 # ============================================================
 
 is_apt_package() {
+
     apt-cache show "$1" >/dev/null 2>&1
+
 }
 
 
 # ============================================================
-# APT DOWNLOAD
+# DOWNLOAD APT PACKAGE
 # ============================================================
 
 download_apt_package() {
@@ -119,21 +123,26 @@ download_apt_package() {
 
     (
         cd "$dir"
-        apt-get download "$pkg" >/dev/null 2>&1
+
+        apt-get download "$pkg" \
+            >/dev/null 2>&1
+
     ) || {
+
         echo
-        echo "ERROR: Failed to download $pkg"
+        echo "ERROR: Failed to download:"
+        echo "  $pkg"
         exit 1
+
     }
+
 }
 
 
 # ============================================================
-# APT DEPENDENCY RESOLVER
+# RESOLVE APT DEPENDENCIES
 #
-# IMPORTANT:
-# No awk.
-# Compatible with fresh Termux.
+# NO AWK
 # ============================================================
 
 resolve_apt() {
@@ -163,19 +172,22 @@ resolve_apt() {
     for dep in $deps; do
 
         if apt-cache show "$dep" >/dev/null 2>&1; then
+
             resolve_apt "$dep"
+
         fi
 
     done
+
 }
 
 
 # ============================================================
-# BOOTSTRAP
+# BOOTSTRAP PACKAGES
 # ============================================================
 
 echo
-echo "[2/7] Preparing bootstrap..."
+echo "[2/7] Preparing bootstrap packages..."
 
 download_apt_package \
     "libacl" \
@@ -187,7 +199,7 @@ download_apt_package \
 
 
 # ============================================================
-# PROCESS PACKAGES
+# PROCESS REQUESTED PACKAGES
 # ============================================================
 
 echo
@@ -214,7 +226,7 @@ for pkg in $TO_OFFLINE; do
 
 
     # --------------------------------------------------------
-    # APT / TERMUX PACKAGE
+    # APT PACKAGE
     # --------------------------------------------------------
 
     if is_apt_package "$pkg"; then
@@ -262,16 +274,24 @@ for pkg in $TO_OFFLINE; do
 
     echo "Downloading PyPI package and dependencies..."
 
-    python3 -m pip download \
+    if ! python3 -m pip download \
         --dest "$PACKAGE_DIR" \
         "$pkg"
+    then
 
+        echo
+        echo "ERROR: Failed to download PyPI package:"
+        echo "  $pkg"
+
+        exit 1
+
+    fi
 
 done
 
 
 # ============================================================
-# VERIFY PACKAGES
+# VERIFY
 # ============================================================
 
 echo
@@ -305,14 +325,14 @@ echo "Python files: $PY_COUNT"
 if [ "$DEB_COUNT" -eq 0 ]; then
 
     echo
-    echo "ERROR: No DEB packages found."
+    echo "ERROR: No DEB packages generated."
     exit 1
 
 fi
 
 
 # ============================================================
-# COPY CODES
+# COPY APPLICATION CODES
 # ============================================================
 
 echo
@@ -326,9 +346,13 @@ if [ -d "$CODES_SOURCE" ]; then
 
         [ -e "$item" ] || continue
 
-        cp -a "$item" "$CODES/"
+        NAME="$(basename "$item")"
 
-        echo "[OK] $(basename "$item")"
+        cp -a \
+            "$item" \
+            "$CODES/"
+
+        echo "[OK] $NAME"
 
     done
 
@@ -337,8 +361,7 @@ if [ -d "$CODES_SOURCE" ]; then
 else
 
     echo
-    echo "WARNING:"
-    echo "Codes directory not found:"
+    echo "[INFO] Codes directory not found:"
     echo "  $CODES_SOURCE"
 
 fi
@@ -349,14 +372,13 @@ fi
 # ============================================================
 
 echo
-echo "[6/7] Generating installer..."
+echo "[6/7] Generating installer.sh..."
 
 
-cat > "$INSTALLER" <<'INSTALLER'
-
+cat > "$INSTALLER" <<'INSTALLER_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 
-VERSION="3.7"
+VERSION="3.8"
 
 if [ -z "${BASH_VERSION:-}" ]; then
     exec bash "$0" "$@"
@@ -440,7 +462,7 @@ fail() {
 
 
 # ============================================================
-# PROGRESS
+# PROGRESS BAR
 # ============================================================
 
 progress_bar() {
@@ -450,25 +472,28 @@ progress_bar() {
     local empty
     local i
 
-    filled=$(
+    filled="$(
         printf '%s\n' "$percent" |
-        awk -v w="$BAR_WIDTH" \
-        '{
-            printf "%d", $1*w/100
-        }'
-    )
+        awk \
+            -v w="$BAR_WIDTH" \
+            '{
+                printf "%d", $1*w/100
+            }'
+    )"
 
     empty=$((BAR_WIDTH - filled))
 
     printf '['
 
     i=0
+
     while [ "$i" -lt "$filled" ]; do
         printf '#'
         i=$((i + 1))
     done
 
     i=0
+
     while [ "$i" -lt "$empty" ]; do
         printf '-'
         i=$((i + 1))
@@ -480,7 +505,7 @@ progress_bar() {
 
 
 # ============================================================
-# PACKAGE NAME
+# CLEAN PACKAGE NAME
 # ============================================================
 
 clean_package_name() {
@@ -488,6 +513,7 @@ clean_package_name() {
     local file="$1"
 
     file="${file##*/}"
+
     file="${file%.deb}"
 
     file="$(
@@ -508,189 +534,516 @@ clean_package_name() {
 
 
 # ============================================================
-# START
+# TAR STREAM EXTRACTOR
+#
+# This does NOT use tar.
+# This does NOT use Python.
+#
+# It is used only during the libacl bootstrap.
 # ============================================================
 
-header
+extract_libacl_from_tar() {
+
+    local archive="$1"
+    local destination="$2"
+
+    local work
+    local tarfile
+
+    work="$(
+        mktemp -d \
+        "$PREFIX/tmp/libacl_extract.XXXXXX" \
+        2>/dev/null ||
+        mktemp -d
+    )"
+
+    mkdir -p "$destination"
+
+    tarfile="$work/data.tar"
+
+
+    # --------------------------------------------------------
+    # Decompress data archive.
+    # --------------------------------------------------------
+
+    case "$archive" in
+
+        *.xz)
+
+            if ! xz -dc "$archive" > "$tarfile" 2>/dev/null; then
+
+                rm -rf "$work"
+
+                return 1
+
+            fi
+
+            ;;
+
+        *.gz)
+
+            if ! gzip -dc "$archive" > "$tarfile" 2>/dev/null; then
+
+                rm -rf "$work"
+
+                return 1
+
+            fi
+
+            ;;
+
+        *.bz2)
+
+            if ! bzip2 -dc "$archive" > "$tarfile" 2>/dev/null; then
+
+                rm -rf "$work"
+
+                return 1
+
+            fi
+
+            ;;
+
+        *.zst)
+
+            if ! zstd -dc "$archive" > "$tarfile" 2>/dev/null; then
+
+                rm -rf "$work"
+
+                return 1
+
+            fi
+
+            ;;
+
+        *)
+
+            cp "$archive" "$tarfile"
+
+            ;;
+
+    esac
+
+
+    # --------------------------------------------------------
+    # Read POSIX tar manually.
+    # --------------------------------------------------------
+
+    local offset=0
+    local header
+    local name
+    local size_field
+    local size
+    local blocks
+    local basename
+    local output
+
+
+    while true; do
+
+        header="$work/header"
+
+
+        if ! dd \
+            if="$tarfile" \
+            of="$header" \
+            bs=512 \
+            skip="$offset" \
+            count=1 \
+            2>/dev/null
+        then
+
+            break
+
+        fi
+
+
+        # End of archive.
+        if ! od \
+            -An \
+            -tx1 \
+            -N 512 \
+            "$header" |
+            tr -d ' \n' |
+            grep -q '[^0]'
+        then
+
+            break
+
+        fi
+
+
+        name="$(
+            dd \
+                if="$header" \
+                bs=1 \
+                skip=0 \
+                count=100 \
+                2>/dev/null |
+            tr -d '\000'
+        )"
+
+
+        size_field="$(
+            dd \
+                if="$header" \
+                bs=1 \
+                skip=124 \
+                count=12 \
+                2>/dev/null |
+            tr -d '\000 ' |
+            tr -d '\n'
+        )"
+
+
+        if [ -z "$size_field" ]; then
+
+            size=0
+
+        else
+
+            size=$(
+                printf '%d' "0$size_field" \
+                2>/dev/null ||
+                echo 0
+            )
+
+        fi
+
+
+        basename="${name##*/}"
+
+
+        # ----------------------------------------------------
+        # We only need libacl.so*
+        # ----------------------------------------------------
+
+        case "$basename" in
+
+            libacl.so|libacl.so.*)
+
+                output="$destination/$basename"
+
+                dd \
+                    if="$tarfile" \
+                    of="$output" \
+                    bs=512 \
+                    skip=$((offset + 1)) \
+                    count=$(
+                        echo "($size + 511) / 512" |
+                        bc
+                    ) \
+                    2>/dev/null || true
+
+
+                if [ "$size" -gt 0 ]; then
+
+                    # Trim padding from extracted file.
+                    truncate \
+                        -s "$size" \
+                        "$output" \
+                        2>/dev/null || true
+
+                fi
+
+                chmod 755 "$output" 2>/dev/null || true
+
+                ;;
+
+        esac
+
+
+        blocks=$(
+            echo "($size + 511) / 512" |
+            bc
+        )
+
+
+        offset=$(
+            echo "$offset + 1 + $blocks" |
+            bc
+        )
+
+
+        # Safety.
+        if [ "$offset" -gt 10000000 ]; then
+            break
+        fi
+
+    done
+
+
+    rm -rf "$work"
+
+
+    if ls "$destination"/libacl.so* \
+        >/dev/null 2>&1
+    then
+
+        return 0
+
+    fi
+
+
+    return 1
+
+}
 
 
 # ============================================================
-# BOOTSTRAP LIBACL
+# FIND LIBACL DEB
 # ============================================================
 
 LIBACL_DEB=""
 
-
 for file in "$BOOTSTRAP"/libacl_*.deb; do
 
     if [ -f "$file" ]; then
+
         LIBACL_DEB="$file"
+
         break
+
     fi
 
 done
 
 
+# ============================================================
+# LIBACL BOOTSTRAP
+#
+# IMPORTANT:
+# No Python.
+# No tar.
+# No dpkg-deb.
+#
+# This happens BEFORE normal DEB installation.
+# ============================================================
+
 if [ -n "$LIBACL_DEB" ]; then
 
 
-    if [ ! -f "$PREFIX/lib/libacl.so" ]; then
+    LIBACL_READY=0
+
+
+    for lib in \
+        "$PREFIX/lib/libacl.so" \
+        "$PREFIX/lib/libacl.so.1" \
+        "$PREFIX/lib"/libacl.so.*
+    do
+
+        if [ -f "$lib" ]; then
+
+            LIBACL_READY=1
+
+            break
+
+        fi
+
+    done
+
+
+    if [ "$LIBACL_READY" -eq 0 ]; then
+
+
+        header
 
         printf 'Installing libacl\n'
 
         progress_bar 5
 
 
-        python3 \
-            - "$LIBACL_DEB" "$PREFIX" \
-            >/dev/null 2>&1 <<'PY'
-
-import os
-import sys
-import subprocess
-import tempfile
-import tarfile
-import shutil
-
-deb = os.path.abspath(sys.argv[1])
-prefix = sys.argv[2]
-
-tmp = tempfile.mkdtemp(
-    prefix="libacl_bootstrap_"
-)
-
-try:
-
-    subprocess.run(
-        ["ar", "x", deb],
-        cwd=tmp,
-        check=True
-    )
-
-    data = None
-
-    for name in os.listdir(tmp):
-
-        if name.startswith("data.tar"):
-
-            data = os.path.join(
-                tmp,
-                name
-            )
-
-            break
-
-    if not data:
-        raise RuntimeError(
-            "data archive not found"
-        )
-
-    extract = os.path.join(
-        tmp,
-        "data"
-    )
-
-    os.makedirs(
-        extract,
-        exist_ok=True
-    )
-
-    with tarfile.open(
-        data,
-        "r:*"
-    ) as archive:
-
-        archive.extractall(
-            extract
-        )
-
-    libdir = os.path.join(
-        prefix,
-        "lib"
-    )
-
-    os.makedirs(
-        libdir,
-        exist_ok=True
-    )
-
-    found = []
-
-    for root, dirs, files in os.walk(
-        extract
-    ):
-
-        for name in files:
-
-            if (
-                name == "libacl.so"
-                or
-                name.startswith("libacl.so.")
-            ):
-
-                found.append(
-                    os.path.join(
-                        root,
-                        name
-                    )
-                )
-
-    if not found:
-
-        raise RuntimeError(
-            "libacl.so not found"
-        )
-
-    for source in found:
-
-        destination = os.path.join(
-            libdir,
-            os.path.basename(source)
-        )
-
-        shutil.copy2(
-            source,
-            destination
-        )
-
-        os.chmod(
-            destination,
-            0o755
-        )
-
-finally:
-
-    shutil.rmtree(
-        tmp,
-        ignore_errors=True
-    )
-
-PY
+        BOOT_TMP="$(
+            mktemp -d \
+            "$PREFIX/tmp/libacl_deb.XXXXXX" \
+            2>/dev/null ||
+            mktemp -d
+        )"
 
 
-        if [ ! -f "$PREFIX/lib/libacl.so" ]; then
+        mkdir -p "$PREFIX/tmp"
 
-            fail "libacl bootstrap failed."
+
+        # ----------------------------------------------------
+        # Extract .deb with ar.
+        # ar itself does not require libacl.
+        # ----------------------------------------------------
+
+        if ! (
+            cd "$BOOT_TMP"
+
+            ar x "$LIBACL_DEB"
+        ) >/dev/null 2>&1
+        then
+
+            rm -rf "$BOOT_TMP"
+
+            fail \
+                "Unable to extract libacl DEB."
 
         fi
 
+
+        DATA_ARCHIVE=""
+
+
+        for archive in \
+            "$BOOT_TMP"/data.tar.xz \
+            "$BOOT_TMP"/data.tar.gz \
+            "$BOOT_TMP"/data.tar.bz2 \
+            "$BOOT_TMP"/data.tar.zst \
+            "$BOOT_TMP"/data.tar
+        do
+
+            if [ -f "$archive" ]; then
+
+                DATA_ARCHIVE="$archive"
+
+                break
+
+            fi
+
+        done
+
+
+        if [ -z "$DATA_ARCHIVE" ]; then
+
+            rm -rf "$BOOT_TMP"
+
+            fail \
+                "libacl data archive not found."
+
+        fi
+
+
+        # ----------------------------------------------------
+        # Make sure decompressor exists.
+        # ----------------------------------------------------
+
+        case "$DATA_ARCHIVE" in
+
+            *.xz)
+
+                if ! command -v xz >/dev/null 2>&1; then
+
+                    rm -rf "$BOOT_TMP"
+
+                    fail \
+                        "xz is required for libacl bootstrap."
+
+                fi
+
+                ;;
+
+            *.gz)
+
+                if ! command -v gzip >/dev/null 2>&1; then
+
+                    rm -rf "$BOOT_TMP"
+
+                    fail \
+                        "gzip is required for libacl bootstrap."
+
+                fi
+
+                ;;
+
+        esac
+
+
+        # ----------------------------------------------------
+        # Extract libacl.so without tar.
+        # ----------------------------------------------------
+
+        if ! extract_libacl_from_tar \
+            "$DATA_ARCHIVE" \
+            "$PREFIX/lib"
+        then
+
+            rm -rf "$BOOT_TMP"
+
+            fail \
+                "libacl bootstrap failed."
+
+        fi
+
+
+        rm -rf "$BOOT_TMP"
+
+
+        # ----------------------------------------------------
+        # Find actual library.
+        # ----------------------------------------------------
+
+        REAL_LIB=""
+
+
+        for lib in \
+            "$PREFIX/lib/libacl.so" \
+            "$PREFIX/lib/libacl.so.1" \
+            "$PREFIX/lib"/libacl.so.*
+        do
+
+            if [ -f "$lib" ]; then
+
+                REAL_LIB="$lib"
+
+                break
+
+            fi
+
+        done
+
+
+        if [ -z "$REAL_LIB" ]; then
+
+            fail \
+                "libacl library was not extracted."
+
+        fi
+
+
+        # ----------------------------------------------------
+        # Create libacl.so symlink if necessary.
+        # ----------------------------------------------------
+
+        if [ ! -e "$PREFIX/lib/libacl.so" ]; then
+
+            ln -sf \
+                "$(basename "$REAL_LIB")" \
+                "$PREFIX/lib/libacl.so"
+
+        fi
+
+
+        ok "libacl"
+
+    else
+
+        ok "libacl"
+
     fi
-
-
-    dpkg \
-        --unpack "$LIBACL_DEB" \
-        >/dev/null 2>&1 || true
-
-
-    dpkg \
-        --configure libacl \
-        >/dev/null 2>&1 || true
 
 fi
 
 
 # ============================================================
-# COLLECT DEBS
+# VERIFY TAR
+# ============================================================
+
+if command -v tar >/dev/null 2>&1; then
+
+    if tar --version >/dev/null 2>&1; then
+
+        ok "tar"
+
+    fi
+
+fi
+
+
+# ============================================================
+# COLLECT ALL DEBS
 # ============================================================
 
 DEBS=()
@@ -713,13 +1066,14 @@ TOTAL="${#DEBS[@]}"
 
 if [ "$TOTAL" -eq 0 ]; then
 
-    fail "No offline DEB packages found."
+    fail \
+        "No offline DEB packages found."
 
 fi
 
 
 # ============================================================
-# COPY TO APT CACHE
+# COPY DEBS TO APT CACHE
 # ============================================================
 
 mkdir -p \
@@ -751,14 +1105,15 @@ for deb in "${DEBS[@]}"; do
         clean_package_name "$deb"
     )"
 
-    PERCENT=$(
+
+    PERCENT="$(
         awk \
             -v d="$COUNT" \
             -v t="$TOTAL" \
             'BEGIN {
                 printf "%d", 10+(d*55/t)
             }'
-    )
+    )"
 
 
     header
@@ -768,6 +1123,7 @@ for deb in "${DEBS[@]}"; do
     progress_bar "$PERCENT"
 
 
+    # Temporary dependency errors are allowed.
     dpkg \
         --force-confold \
         --force-confdef \
@@ -809,6 +1165,13 @@ apt-get \
     >/dev/null 2>&1 || true
 
 
+# ============================================================
+# SECOND CONFIGURE
+# ============================================================
+
+progress_bar 85
+
+
 dpkg \
     --force-confold \
     --force-confdef \
@@ -831,7 +1194,7 @@ fi
 
 
 # ============================================================
-# PYTHON
+# PYTHON VERIFICATION
 # ============================================================
 
 header
@@ -854,10 +1217,11 @@ ok "Python"
 
 
 # ============================================================
-# PIP
+# PIP VERIFICATION
 # ============================================================
 
 printf '\n'
+
 
 if python3 -m pip --version >/dev/null 2>&1; then
 
@@ -865,7 +1229,7 @@ if python3 -m pip --version >/dev/null 2>&1; then
 
 else
 
-    printf '[ERROR] Pip\n'
+    error_msg "Pip"
 
     fail \
         "pip is unavailable after Python installation."
@@ -936,7 +1300,7 @@ done
 
 
 # ============================================================
-# COPY APPLICATIONS
+# COPY APPLICATION FILES
 # ============================================================
 
 if [ -d "$CODES" ]; then
@@ -980,7 +1344,7 @@ if [ -d "$CODES" ]; then
 
 
     # ========================================================
-    # RUN APP INSTALLERS
+    # RUN APPLICATION INSTALLERS
     # ========================================================
 
     printf '\n'
@@ -1061,29 +1425,33 @@ printf '\n'
 
 printf 'Offline installation successful.\n'
 
-INSTALLER
+INSTALLER_EOF
 
 
 chmod +x "$INSTALLER"
 
 
 # ============================================================
-# COMPLETE
+# FINISH
 # ============================================================
 
 echo
 echo "[7/7] Builder complete."
 echo
 
-echo "OFFLINE_INSTALLER:"
+echo "Output:"
 echo "  $OUTPUT_DIR"
 
 echo
 
-echo "Run installer:"
+echo "Installer:"
+echo "  $INSTALLER"
+
+echo
+
+echo "Run:"
 echo
 echo "  cd $OUTPUT_DIR && ./installer.sh"
-
 echo
 
 echo "Done."
