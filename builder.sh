@@ -1,1266 +1,652 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -e
 
-VERSION="3.4"
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
-
-# OUTPUT DIRECTORY
+VERSION="3.13"
 OUTPUT_DIR="$HOME/storage/downloads/OFFLINE_INSTALLER"
-
-# PACKAGES TO MAKE AVAILABLE OFFLINE
-#
-# Examples:
-#
-# TO_OFFLINE="python pip qrcode"
-# TO_OFFLINE="python pip qrcode pillow requests"
-# TO_OFFLINE="python pip flask requests"
-#
-TO_OFFLINE="python pip qrcode"
-
-# SOURCE APPLICATION CODES
-#
-# Every folder inside this directory will be copied
-# into the offline installer.
-#
+TO_OFFLINE="python python-pip qrcode"
 CODES_SOURCE="$HOME/storage/downloads/codes"
 
-
-# ============================================================
-# PATHS
-# ============================================================
-
 ROOT="$OUTPUT_DIR"
-
 OFFLINE="$ROOT/offline_packages"
 BOOTSTRAP="$ROOT/bootstrap"
 CODES="$ROOT/codes"
-
 INSTALLER="$ROOT/installer.sh"
-
 APT_SEEN="$ROOT/.apt_seen"
+LIBACL_WORK="$HOME/.libacl_builder_tmp"
 
-
-# ============================================================
-# CREATE DIRECTORIES
-# ============================================================
+clear 2>/dev/null || true
+echo
+echo "OFFLINE INSTALLER BUILDER v$VERSION"
+echo
+echo "Installing in progress"
+echo
 
 mkdir -p "$ROOT"
-mkdir -p "$OFFLINE"
-mkdir -p "$BOOTSTRAP"
-mkdir -p "$CODES"
+rm -rf "$OFFLINE" "$BOOTSTRAP" "$CODES" "$LIBACL_WORK" "$APT_SEEN"
+mkdir -p "$OFFLINE" "$BOOTSTRAP" "$CODES"
+touch "$APT_SEEN"
 
+command -v apt-get >/dev/null 2>&1 || { echo "[ERROR] apt-get not found"; exit 1; }
+command -v apt-cache >/dev/null 2>&1 || { echo "[ERROR] apt-cache not found"; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "[ERROR] python3 not found"; exit 1; }
+command -v dpkg-deb >/dev/null 2>&1 || { echo "[ERROR] dpkg-deb not found"; exit 1; }
+command -v ar >/dev/null 2>&1 || { echo "[ERROR] ar not found"; exit 1; }
 
-# ============================================================
-# APT PACKAGE DETECTION
-# ============================================================
+echo "[OK] Builder environment"
 
 is_apt_package() {
-
     apt-cache show "$1" >/dev/null 2>&1
-
 }
-
-
-# ============================================================
-# DOWNLOAD APT PACKAGE
-# ============================================================
 
 download_apt_package() {
-
     local pkg="$1"
     local dir="$2"
-
     mkdir -p "$dir"
-
     echo "Downloading: $pkg"
-
     (
         cd "$dir"
-
-        apt-get download "$pkg" \
-            >/dev/null 2>&1
-
+        apt-get download "$pkg" >/dev/null 2>&1
     ) || {
-
-        echo
-        echo "WARNING: Unable to download:"
-        echo "  $pkg"
-        echo
-
+        echo "[ERROR] Failed to download $pkg"
+        exit 1
     }
-
 }
 
-
-# ============================================================
-# RESOLVE APT DEPENDENCIES
-# ============================================================
-
 resolve_apt() {
-
     local pkg="$1"
 
-    grep -qxF "$pkg" "$APT_SEEN" \
-        2>/dev/null && return 0
+    if grep -qxF "$pkg" "$APT_SEEN" 2>/dev/null; then
+        return 0
+    fi
 
     echo "$pkg" >> "$APT_SEEN"
-
     echo "Resolving: $pkg"
 
     local deps
-
     deps="$(
         apt-cache depends "$pkg" 2>/dev/null |
-        awk '
-            /^[[:space:]]*(PreDepends|Depends):/ {
-                sub(/^[^:]+:[[:space:]]*/, "", $0)
-                print
-            }
-        ' |
-        sed 's/[<>=].*$//' |
+        grep -E '^[[:space:]]+(PreDepends|Depends):' |
+        sed -E 's/^[[:space:]]+(PreDepends|Depends):[[:space:]]*//' |
+        sed -E 's/[<>=].*$//' |
         sed 's/^[[:space:]]*//' |
         grep -v '^$' ||
         true
     )"
 
     for dep in $deps; do
-
-        if apt-cache show "$dep" \
-            >/dev/null 2>&1
-        then
-
+        if apt-cache show "$dep" >/dev/null 2>&1; then
             resolve_apt "$dep"
-
         fi
-
     done
-
 }
 
+echo
+echo "[1/8] Checking Python..."
 
-# ============================================================
-# BUILDER START
-# ============================================================
+if ! command -v python3 >/dev/null 2>&1; then
+    echo
+    echo "[ERROR] Python 3 is required to run this builder."
+    echo "Install Python in the current Termux first, then run the builder again."
+    exit 1
+fi
 
-clear 2>/dev/null || true
+echo "[OK] Python: $(python3 --version 2>/dev/null || true)"
 
 echo
-echo "OFFLINE INSTALLER BUILDER v$VERSION"
-echo
-echo "Output:"
-echo "  $ROOT"
-echo
-echo "Packages:"
-echo "  $TO_OFFLINE"
-echo
+echo "[2/8] Resolving requested APT packages..."
 
+# pip is intentionally not downloaded from PyPI.
+# On Termux, pip must come from the Termux Python package/dependency set.
+APT_ROOTS=""
 
-# ============================================================
-# BOOTSTRAP PACKAGES
-# ============================================================
+for pkg in $TO_OFFLINE; do
+    [ "$pkg" = "pip" ] && continue
 
-echo "[1/6] Preparing bootstrap..."
+    if is_apt_package "$pkg"; then
+        APT_ROOTS="$APT_ROOTS $pkg"
+    fi
+done
 
-# Required for affected Termux environments
-download_apt_package \
-    "libacl" \
-    "$BOOTSTRAP"
-
-# Keep tar available offline
-download_apt_package \
-    "tar" \
-    "$BOOTSTRAP"
-
-
-# ============================================================
-# PROCESS TO_OFFLINE
-# ============================================================
-
-echo
-echo "[2/6] Processing packages..."
+# libacl bootstrap itself is required because fresh Termux may have
+# a broken tar/dpkg-deb chain before libacl is installed.
+APT_ROOTS="$APT_ROOTS libacl"
 
 rm -f "$APT_SEEN"
 touch "$APT_SEEN"
 
-
-for pkg in $TO_OFFLINE; do
-
-
-    # ========================================================
-    # PIP
-    # ========================================================
-
-    if [ "$pkg" = "pip" ]; then
-
-        echo
-        echo "PIP"
-        echo "  Termux-managed"
-        echo "  Skipping PyPI pip."
-
-        continue
-
-    fi
-
-
-    # ========================================================
-    # APT PACKAGE
-    # ========================================================
-
-    if is_apt_package "$pkg"; then
-
-        echo
-        echo "APT: $pkg"
-
-        rm -f "$APT_SEEN"
-        touch "$APT_SEEN"
-
-        resolve_apt "$pkg"
-
-        mkdir -p "$OFFLINE/$pkg"
-
-        echo
-        echo "Downloading dependencies..."
-
-        while read -r dep; do
-
-            [ -z "$dep" ] && continue
-
-            download_apt_package \
-                "$dep" \
-                "$OFFLINE/$pkg"
-
-        done < "$APT_SEEN"
-
-        download_apt_package \
-            "$pkg" \
-            "$OFFLINE/$pkg"
-
-        continue
-
-    fi
-
-
-    # ========================================================
-    # PYPI PACKAGE
-    # ========================================================
-
-    echo
-    echo "PYPI: $pkg"
-
-    mkdir -p "$OFFLINE/$pkg"
-
-    python3 -m pip download \
-        --dest "$OFFLINE/$pkg" \
-        "$pkg" || {
-
-        echo
-        echo "WARNING: Failed to download:"
-        echo "  $pkg"
-
-    }
-
+for pkg in $APT_ROOTS; do
+    resolve_apt "$pkg"
 done
 
-
-# ============================================================
-# LIBACL RECOVERY PACKAGE
-# ============================================================
+echo
+echo "APT dependency set:"
+cat "$APT_SEEN"
 
 echo
-echo "[3/6] Preparing libacl recovery..."
+echo "[3/8] Downloading APT packages..."
 
-mkdir -p "$OFFLINE/python"
+while IFS= read -r pkg; do
+    [ -n "$pkg" ] || continue
 
+    if [ "$pkg" = "libacl" ]; then
+        DIR="$BOOTSTRAP"
+    else
+        # Keep the package tree simple and predictable.
+        # Python packages go under python; other APT dependencies are
+        # stored there too because the installer discovers all DEBs.
+        DIR="$OFFLINE/python"
+    fi
+
+    download_apt_package "$pkg" "$DIR"
+done < "$APT_SEEN"
+
+echo
+echo "[4/8] Preparing raw libacl bootstrap..."
+
+LIBACL_DEB=""
 for file in "$BOOTSTRAP"/libacl_*.deb; do
-
-    [ -f "$file" ] || continue
-
-    cp -f \
-        "$file" \
-        "$OFFLINE/python/"
-
+    if [ -f "$file" ]; then
+        LIBACL_DEB="$file"
+        break
+    fi
 done
 
+[ -n "$LIBACL_DEB" ] || {
+    echo "[ERROR] libacl DEB not found"
+    exit 1
+}
 
-# ============================================================
-# COPY APPLICATION CODES INTO BUNDLE
-# ============================================================
+LIBACL_RAW="$BOOTSTRAP/libacl"
+rm -rf "$LIBACL_RAW" "$LIBACL_WORK"
+mkdir -p "$LIBACL_RAW" "$LIBACL_WORK"
 
-echo
-echo "[4/6] Copying application codes..."
+echo "Extracting libacl in private Termux storage..."
 
-if [ -d "$CODES_SOURCE" ]; then
-
-    shopt -s dotglob nullglob
-
-    for item in "$CODES_SOURCE"/*; do
-
-        [ -e "$item" ] || continue
-
-        NAME="$(basename "$item")"
-
-        echo "  Copying:"
-        echo "    $NAME"
-
-        cp -a \
-            "$item" \
-            "$CODES/"
-
-    done
-
-    shopt -u dotglob nullglob
-
-else
-
-    echo
-    echo "WARNING:"
-    echo "Codes source not found:"
-    echo "  $CODES_SOURCE"
-
+if ! dpkg-deb -x "$LIBACL_DEB" "$LIBACL_WORK" >/dev/null 2>&1; then
+    echo "[ERROR] libacl extraction failed"
+    rm -rf "$LIBACL_WORK"
+    exit 1
 fi
 
+FOUND_LIBACL=0
 
-# ============================================================
-# GENERATE INSTALLER
-# ============================================================
+while IFS= read -r -d '' file; do
+    cp -a "$file" "$LIBACL_RAW/"
+    FOUND_LIBACL=1
+done < <(
+    find "$LIBACL_WORK" \
+        -type f \
+        \( -name "libacl.so" -o -name "libacl.so.*" \) \
+        -print0
+)
+
+rm -rf "$LIBACL_WORK"
+
+[ "$FOUND_LIBACL" -eq 1 ] || {
+    echo "[ERROR] libacl.so was not found"
+    exit 1
+}
+
+echo "[OK] Raw libacl bootstrap"
 
 echo
-echo "[5/6] Generating installer.sh..."
+echo "[5/8] Downloading PyPI packages..."
 
+for pkg in $TO_OFFLINE; do
+    [ "$pkg" = "pip" ] && continue
+
+    if is_apt_package "$pkg"; then
+        continue
+    fi
+
+    PACKAGE_DIR="$OFFLINE/$pkg"
+    mkdir -p "$PACKAGE_DIR"
+
+    echo "Downloading: $pkg"
+
+    python3 -m pip download \
+        --dest "$PACKAGE_DIR" \
+        "$pkg"
+done
+
+echo
+echo "[6/8] Verifying offline packages..."
+
+DEB_COUNT="$(
+    find "$OFFLINE" "$BOOTSTRAP" \
+        -type f -name "*.deb" 2>/dev/null |
+    wc -l
+)"
+
+PY_COUNT="$(
+    find "$OFFLINE" \
+        -type f \
+        \( -name "*.whl" -o -name "*.tar.gz" -o -name "*.zip" \) 2>/dev/null |
+    wc -l
+)"
+
+RAW_COUNT="$(
+    find "$BOOTSTRAP/libacl" \
+        -maxdepth 1 \
+        -type f \
+        -name "libacl.so*" 2>/dev/null |
+    wc -l
+)"
+
+echo "DEB files: $DEB_COUNT"
+echo "Python files: $PY_COUNT"
+echo "Raw libacl files: $RAW_COUNT"
+
+[ "$DEB_COUNT" -gt 0 ] || { echo "[ERROR] No DEB files"; exit 1; }
+[ "$RAW_COUNT" -gt 0 ] || { echo "[ERROR] No raw libacl"; exit 1; }
+
+echo
+echo "[7/8] Copying application codes..."
+
+if [ -d "$CODES_SOURCE" ]; then
+    shopt -s dotglob nullglob
+    for item in "$CODES_SOURCE"/*; do
+        [ -e "$item" ] || continue
+        NAME="$(basename "$item")"
+        cp -a "$item" "$CODES/"
+        echo "[OK] $NAME"
+    done
+    shopt -u dotglob nullglob
+else
+    echo "[INFO] Codes directory not found"
+    echo "       $CODES_SOURCE"
+fi
+
+echo
+echo "[8/8] Generating installer.sh..."
 
 cat > "$INSTALLER" <<'INSTALLER_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 
+VERSION="3.18"
+
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec bash "$0" "$@"
+fi
+
 set -u
 
-
-VERSION="3.4"
-
-
-# ============================================================
-# PATHS
-# ============================================================
-
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-
 OFFLINE="$ROOT/offline_packages"
 BOOTSTRAP="$ROOT/bootstrap"
 CODES="$ROOT/codes"
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 
+BAR_WIDTH=30
+CURRENT_STEP="Starting installer"
+OVERALL_CURRENT=0
+OK_ITEMS=()
 
-# ============================================================
-# UI CONFIG
-# ============================================================
-
-BAR_WIDTH=36
-
-
-# ============================================================
-# SCREEN
-# ============================================================
-
-clear_screen() {
-
-    printf '\033[2J'
-    printf '\033[H'
-
+add_ok() {
+    local item="$1"
+    local existing
+    for existing in "${OK_ITEMS[@]}"; do
+        [ "$existing" = "$item" ] && return
+    done
+    OK_ITEMS+=("$item")
 }
 
+draw_progress() {
+    local width="$BAR_WIDTH"
+    local pct="$OVERALL_CURRENT"
+    local filled=$((pct * width / 100))
+    local empty=$((width - filled))
+    local bar=""
+    local rest=""
 
-header() {
+    [ "$filled" -gt 0 ] && bar=$(printf '%*s' "$filled" '' | tr ' ' '#')
+    [ "$empty" -gt 0 ] && rest=$(printf '%*s' "$empty" '' | tr ' ' '-')
 
-    clear_screen
-
-    printf 'OFFLINE INSTALLER\n'
-    printf 'Installing in progress\n'
-    printf '\n'
-
+    printf 'Overall progress [%s%s] %d%%\n' "$bar" "$rest" "$pct"
 }
 
+draw_ui() {
+    clear
+    printf '\nOFFLINE INSTALLER\n'
+    printf 'Installing in progress\n\n'
 
-# ============================================================
-# STATUS
-# ============================================================
+    local item
+    for item in "${OK_ITEMS[@]}"; do
+        printf '[OK] %s\n' "$item"
+    done
+
+    [ "${#OK_ITEMS[@]}" -gt 0 ] && printf '\n'
+    printf 'Current: %s\n' "$CURRENT_STEP"
+    draw_progress
+}
+
+update_progress() {
+    local requested="${1:-$OVERALL_CURRENT}"
+    local step="${2:-$CURRENT_STEP}"
+
+    [ "$requested" -lt "$OVERALL_CURRENT" ] && requested="$OVERALL_CURRENT"
+    OVERALL_CURRENT="$requested"
+    CURRENT_STEP="$step"
+    draw_ui
+}
 
 ok() {
-
-    printf '[OK] %s\n' "$1"
-
+    add_ok "$1"
+    draw_ui
 }
 
-
-error_msg() {
-
-    printf '[ERROR] %s\n' "$1"
-
+process() {
+    CURRENT_STEP="${1:-$CURRENT_STEP}"
+    draw_ui
 }
 
-
-# ============================================================
-# PACKAGE NAME CLEANER
-# ============================================================
+fail() {
+    local message="$1"
+    CURRENT_STEP="$message"
+    draw_ui
+    printf '\nError\n\n%s\n\nInstaller stopped.\n' "$message"
+    exit 1
+}
 
 clean_package_name() {
-
-    local filename="$1"
-
-    filename="${filename##*/}"
-
-    # Remove .deb
-    filename="${filename%.deb}"
-
-    # Remove architecture
-    filename="$(
-        printf '%s' "$filename" |
-        sed -E \
-        's/_(aarch64|arm64|arm|x86_64|amd64|i686|all)$//'
+    local file="$1"
+    file="${file##*/}"
+    file="${file%.deb}"
+    file="$(
+        printf '%s\n' "$file" |
+        sed -E 's/_(aarch64|arm64|arm|x86_64|amd64|i686|x86|all)$//'
     )"
-
-    # Remove Debian version
-    filename="$(
-        printf '%s' "$filename" |
-        sed -E \
-        's/_[0-9][A-Za-z0-9.+:~%-]*.*$//'
+    file="$(
+        printf '%s\n' "$file" |
+        sed -E 's/_[0-9][A-Za-z0-9.+:~%-]*.*$//'
     )"
-
-    printf '%s' "$filename"
-
+    printf '%s' "$file"
 }
 
-
-# ============================================================
-# PROGRESS BAR
-# ============================================================
-
-progress_bar() {
-
-    local percent="$1"
-
-    local filled
-    local empty
-
-    filled=$(
-        awk \
-            -v p="$percent" \
-            -v w="$BAR_WIDTH" \
-            'BEGIN {
-                printf "%d", p * w / 100
-            }'
-    )
-
-    empty=$((BAR_WIDTH - filled))
-
-
-    printf '['
-
-
-    if [ "$filled" -gt 0 ]; then
-
-        printf '%0.s#' \
-            $(seq 1 "$filled") \
-            2>/dev/null || true
-
-    fi
-
-
-    if [ "$empty" -gt 0 ]; then
-
-        printf '%0.s-' \
-            $(seq 1 "$empty") \
-            2>/dev/null || true
-
-    fi
-
-
-    printf '] %s%%\n' "$percent"
-
+error_line() {
+    local code="${1:-1}"
+    local line="${2:-$LINENO}"
+    printf '%s\\n' "Application installer failed at line $line (exit $code)."
 }
-
-
-# ============================================================
-# INSTALLING LINE
-# ============================================================
-
-installing() {
-
-    local name="$1"
-    local percent="$2"
-
-    printf 'Installing %s\n' "$name"
-
-    progress_bar "$percent"
-
-}
-
-
-# ============================================================
-# BASE CHECK
-# ============================================================
-
-header
-
-
-if ! command -v dpkg >/dev/null 2>&1; then
-
-    error_msg "dpkg not found"
-
-    exit 1
-
-fi
-
-
-if ! command -v apt-get >/dev/null 2>&1; then
-
-    error_msg "apt-get not found"
-
-    exit 1
-
-fi
-
 
 # ============================================================
 # LIBACL BOOTSTRAP
 # ============================================================
 
-LIBACL_DEB=""
+process "Installing libacl..."
 
+LIBACL_RAW="$BOOTSTRAP/libacl"
+mkdir -p "$PREFIX/lib"
 
-for file in \
-    "$BOOTSTRAP"/libacl_*.deb \
-    "$OFFLINE"/python/libacl_*.deb
+LIBACL_READY=0
+for lib in \
+    "$PREFIX/lib/libacl.so" \
+    "$PREFIX/lib/libacl.so.1" \
+    "$PREFIX/lib"/libacl.so.*
 do
-
-    if [ -f "$file" ]; then
-
-        LIBACL_DEB="$file"
-
+    if [ -f "$lib" ]; then
+        LIBACL_READY=1
         break
-
     fi
-
 done
 
-
-if [ -n "$LIBACL_DEB" ]; then
-
-
-    if [ ! -f "$PREFIX/lib/libacl.so" ]; then
-
-        header
-
-        printf 'Installing libacl\n'
-
-        progress_bar 10
-
-
-        if command -v python3 >/dev/null 2>&1; then
-
-            python3 \
-                - "$LIBACL_DEB" "$PREFIX" \
-                >/dev/null 2>&1 <<'PY'
-
-import sys
-import os
-import subprocess
-import tempfile
-import tarfile
-
-
-deb = os.path.abspath(
-    sys.argv[1]
-)
-
-prefix = sys.argv[2]
-
-
-tmp = tempfile.mkdtemp(
-    prefix="libacl_bootstrap_"
-)
-
-
-# Extract Debian archive
-
-subprocess.run(
-    ["ar", "x", deb],
-    cwd=tmp,
-    check=True
-)
-
-
-# Locate data archive
-
-data = None
-
-
-for name in os.listdir(tmp):
-
-    if name.startswith("data.tar"):
-
-        data = os.path.join(
-            tmp,
-            name
-        )
-
-        break
-
-
-if not data:
-
-    raise SystemExit(
-        "data archive not found"
-    )
-
-
-extract = os.path.join(
-    tmp,
-    "data"
-)
-
-
-os.makedirs(
-    extract,
-    exist_ok=True
-)
-
-
-# Extract package contents
-
-with tarfile.open(
-    data,
-    "r:*"
-) as archive:
-
-    archive.extractall(
-        extract
-    )
-
-
-# Find libacl.so
-
-found = []
-
-
-for root, dirs, files in os.walk(
-    extract
-):
-
-    for name in files:
-
-        if (
-            name == "libacl.so"
-            or
-            name.startswith("libacl.so.")
-        ):
-
-            found.append(
-                os.path.join(
-                    root,
-                    name
-                )
-            )
-
-
-if not found:
-
-    raise SystemExit(
-        "libacl.so not found"
-    )
-
-
-# Install library
-
-libdir = os.path.join(
-    prefix,
-    "lib"
-)
-
-
-os.makedirs(
-    libdir,
-    exist_ok=True
-)
-
-
-for source in found:
-
-    destination = os.path.join(
-        libdir,
-        os.path.basename(source)
-    )
-
-
-    with open(
-        source,
-        "rb"
-    ) as src:
-
-        with open(
-            destination,
-            "wb"
-        ) as dst:
-
-            dst.write(
-                src.read()
-            )
-
-
-    os.chmod(
-        destination,
-        0o755
-    )
-
-PY
-
+if [ "$LIBACL_READY" -eq 0 ]; then
+    FOUND_LIB=""
+    for lib in \
+        "$LIBACL_RAW/libacl.so" \
+        "$LIBACL_RAW/libacl.so.1" \
+        "$LIBACL_RAW"/libacl.so.*
+    do
+        if [ -f "$lib" ]; then
+            FOUND_LIB="$lib"
+            break
         fi
+    done
 
+    [ -n "$FOUND_LIB" ] || fail "Raw libacl library not found."
+
+    cp -f "$FOUND_LIB" "$PREFIX/lib/" ||
+        fail "Unable to copy libacl."
+
+    chmod 755 "$PREFIX/lib/$(basename "$FOUND_LIB")"
+
+    if [ ! -e "$PREFIX/lib/libacl.so" ]; then
+        ln -sf "$(basename "$FOUND_LIB")" "$PREFIX/lib/libacl.so"
     fi
-
-
-    # Configure libacl
-
-    dpkg --unpack \
-        "$LIBACL_DEB" \
-        >/dev/null 2>&1 || true
-
-
-    dpkg --configure libacl \
-        >/dev/null 2>&1 || true
-
 fi
 
+ok "libacl"
+update_progress 5
 
 # ============================================================
-# LOAD OFFLINE APT CACHE
+# COLLECT DEBS
 # ============================================================
 
-mkdir -p \
-    "$PREFIX/var/cache/apt/archives"
+process "Preparing offline packages..."
 
+DEBS=()
+while IFS= read -r -d '' deb; do
+    DEBS+=("$deb")
+done < <(
+    find "$OFFLINE" "$BOOTSTRAP" -type f -name "*.deb" -print0
+)
 
-find "$OFFLINE" "$BOOTSTRAP" \
-    -type f \
-    -name "*.deb" \
-    -print0 \
-    2>/dev/null |
-while IFS= read -r -d '' file; do
+TOTAL_DEBS="${#DEBS[@]}"
+[ "$TOTAL_DEBS" -gt 0 ] || fail "No offline DEB packages found."
 
-    cp -f \
-        "$file" \
-        "$PREFIX/var/cache/apt/archives/" \
-        2>/dev/null || true
-
+mkdir -p "$PREFIX/var/cache/apt/archives"
+for deb in "${DEBS[@]}"; do
+    cp -f "$deb" "$PREFIX/var/cache/apt/archives/" 2>/dev/null || true
 done
 
+ok "Offline packages"
+update_progress 10
 
 # ============================================================
-# INSTALL OFFLINE PACKAGES
+# ORDER AND INSTALL DEBS
 # ============================================================
 
-for dir in "$OFFLINE"/*; do
-
-
-    [ -d "$dir" ] || continue
-
-
-    PACKAGE_DIR="$(basename "$dir")"
-
-
-    # --------------------------------------------------------
-    # PIP
-    # --------------------------------------------------------
-
-    if [ "$PACKAGE_DIR" = "pip" ]; then
-
-        continue
-
-    fi
-
-
-    # ========================================================
-    # DEB FILES
-    # ========================================================
-
-    DEBS=()
-
-
-    while IFS= read -r -d '' deb; do
-
-        DEBS+=("$deb")
-
-    done < <(
-        find "$dir" \
-            -maxdepth 1 \
-            -type f \
-            -name "*.deb" \
-            -print0
-    )
-
-
-    if [ "${#DEBS[@]}" -gt 0 ]; then
-
-
-        TOTAL="${#DEBS[@]}"
-        DONE=0
-
-
-        for deb in "${DEBS[@]}"; do
-
-
-            DONE=$((DONE + 1))
-
-
-            NAME="$(
-                clean_package_name "$deb"
-            )"
-
-
-            PERCENT=$(
-                awk \
-                    -v d="$DONE" \
-                    -v t="$TOTAL" \
-                    'BEGIN {
-                        printf "%d", d * 100 / t
-                    }'
-            )
-
-
-            header
-
-
-            # Show packages already completed
-
-            for previous in "${DEBS[@]}"; do
-
-                [ "$previous" = "$deb" ] && break
-
-                PREV_NAME="$(
-                    clean_package_name "$previous"
-                )"
-
-                ok "$PREV_NAME"
-
-            done
-
-
-            printf '\n'
-
-
-            installing \
-                "$NAME" \
-                "$PERCENT"
-
-
-            # ------------------------------------------------
-            # INSTALL DEB
-            # ------------------------------------------------
-
-            if ! dpkg -i "$deb" \
-                >/dev/null 2>&1
-            then
-
-                # Try to configure pending packages
-
-                dpkg --configure -a \
-                    >/dev/null 2>&1 || true
-
-            fi
-
-
-            # ------------------------------------------------
-            # VERIFY
-            # ------------------------------------------------
-
-            if dpkg --audit 2>/dev/null |
-                grep -q .
-            then
-
-                printf '\n'
-
-                error_msg "$NAME"
-
-                printf 'Package installation failed\n'
-
-                exit 1
-
-            fi
-
-
-            printf '\n'
-
-            ok "$NAME"
-
-
-        done
-
-
-        continue
-
-    fi
-
-
-    # ========================================================
-    # PYTHON / PYPI PACKAGE
-    # ========================================================
-
-    PYTHON_FILES="$(
-        find "$dir" \
-            -maxdepth 1 \
-            \( \
-                -name "*.whl" \
-                -o -name "*.tar.gz" \
-                -o -name "*.zip" \
-            \) \
-            2>/dev/null
+ORDERED_DEBS=()
+
+add_pkg_deb() {
+    local pattern="$1"
+    local deb
+    for deb in "${DEBS[@]}"; do
+        case "$(basename "$deb")" in
+            $pattern) ORDERED_DEBS+=("$deb") ;;
+        esac
+    done
+}
+
+add_pkg_deb "attr_*.deb"
+add_pkg_deb "libacl_*.deb"
+
+for deb in "${DEBS[@]}"; do
+    local_seen=0
+    for selected in "${ORDERED_DEBS[@]}"; do
+        if [ "$selected" = "$deb" ]; then
+            local_seen=1
+            break
+        fi
+    done
+    [ "$local_seen" -eq 0 ] && ORDERED_DEBS+=("$deb")
+done
+
+TOTAL_DEBS="${#ORDERED_DEBS[@]}"
+COUNT=0
+
+for deb in "${ORDERED_DEBS[@]}"; do
+    COUNT=$((COUNT + 1))
+    NAME="$(clean_package_name "$deb")"
+
+    process "Installing $NAME..."
+
+    dpkg \
+        --force-confold \
+        --force-confdef \
+        -i "$deb" \
+        >/dev/null 2>&1 || true
+
+    ok "$NAME"
+
+    PERCENT="$(
+        awk -v d="$COUNT" -v t="$TOTAL_DEBS" \
+        'BEGIN { printf "%d", 10+(d*55/t) }'
     )"
-
-
-    if [ -n "$PYTHON_FILES" ]; then
-
-
-        header
-
-
-        printf 'Installing %s\n' \
-            "$PACKAGE_DIR"
-
-        progress_bar 10
-
-
-        if python3 -m pip install \
-            --no-index \
-            --find-links "$dir" \
-            "$PACKAGE_DIR" \
-            >/dev/null 2>&1
-        then
-
-            progress_bar 100
-
-            printf '\n'
-
-            ok "$PACKAGE_DIR"
-
-        else
-
-            printf '\n'
-
-            error_msg "$PACKAGE_DIR"
-
-            printf 'Package installation failed\n'
-
-            exit 1
-
-        fi
-
-
-    fi
-
-
+    update_progress "$PERCENT"
 done
 
-
 # ============================================================
-# COPY APPLICATION FILES
-# ============================================================
-
-if [ -d "$CODES" ]; then
-
-
-    header
-
-
-    printf 'Installing application files\n'
-
-
-    shopt -s dotglob nullglob
-
-
-    for item in "$CODES"/*; do
-
-
-        [ -e "$item" ] || continue
-
-
-        NAME="$(basename "$item")"
-
-
-        # Copy folder/file
-
-        if cp -a \
-            "$item" \
-            "$HOME/" \
-            >/dev/null 2>&1
-        then
-
-            ok "$NAME"
-
-        else
-
-            printf '\n'
-
-            error_msg "$NAME"
-
-            printf 'Copy failed\n'
-
-            exit 1
-
-        fi
-
-
-    done
-
-
-    shopt -u dotglob nullglob
-
-
-    # ========================================================
-    # RUN install.sh
-    # ========================================================
-
-    printf '\n'
-    printf 'Running application installers\n'
-
-
-    for item in "$CODES"/*; do
-
-
-        [ -d "$item" ] || continue
-
-
-        NAME="$(basename "$item")"
-
-
-        TARGET="$HOME/$NAME"
-
-        INSTALL_SCRIPT="$TARGET/install.sh"
-
-
-        # No install.sh = skip
-
-        [ -f "$INSTALL_SCRIPT" ] || continue
-
-
-        printf '\n'
-
-        printf 'Installing %s\n' \
-            "$NAME"
-
-        progress_bar 10
-
-
-        chmod +x \
-            "$INSTALL_SCRIPT" \
-            2>/dev/null || true
-
-
-        # Run from the copied directory
-
-        (
-            cd "$TARGET" || exit 1
-
-            bash "./install.sh"
-
-        ) >/dev/null 2>&1
-
-
-        RESULT=$?
-
-
-        if [ "$RESULT" -ne 0 ]; then
-
-            printf '\n'
-
-            error_msg "$NAME/install.sh"
-
-            printf 'Application installer failed\n'
-
-            exit 1
-
-        fi
-
-
-        progress_bar 100
-
-        printf '\n'
-
-        ok "$NAME/install.sh"
-
-
-    done
-
-
-    shopt -u dotglob nullglob
-
-
-fi
-
-
-# ============================================================
-# FINAL CONFIGURATION
+# CONFIGURATION
 # ============================================================
 
-dpkg --configure -a \
+process "Configuring packages..."
+
+dpkg \
+    --force-confold \
+    --force-confdef \
+    --configure -a \
     >/dev/null 2>&1 || true
 
+update_progress 72
 
-# ============================================================
-# FINAL VERIFICATION
-# ============================================================
+process "Checking package dependencies..."
 
-if dpkg --audit 2>/dev/null |
-    grep -q .
-then
+apt-get -f install -y --no-download >/dev/null 2>&1 || true
+dpkg --configure -a >/dev/null 2>&1 || true
 
-    printf '\n'
-
-    error_msg "Package verification"
-
-    printf 'Broken packages detected\n'
-
-    exit 1
-
+if dpkg --audit 2>/dev/null | grep -q .; then
+    process "Retrying package configuration..."
+    apt-get -f install -y --no-download >/dev/null 2>&1 || true
+    dpkg --configure -a >/dev/null 2>&1 || true
 fi
 
+if dpkg --audit 2>/dev/null | grep -q .; then
+    error_line "Some packages remain unconfigured."
+    dpkg --audit 2>/dev/null || true
+    printf 'Installation stopped.\n'
+    exit 1
+fi
+
+ok "Package configuration"
+update_progress 84
 
 # ============================================================
-# SUCCESS
+# PYTHON / PIP
 # ============================================================
 
-clear_screen
+process "Checking Python..."
+command -v python3 >/dev/null 2>&1 ||
+    fail "Python 3 was not installed."
+ok "Python"
+update_progress 86
 
+process "Checking Pip..."
+python3 -m pip --version >/dev/null 2>&1 ||
+    fail "Pip is unavailable after Python installation."
+ok "Pip"
+update_progress 88
 
-printf 'OFFLINE INSTALLER\n'
-printf 'Installation complete\n'
-printf '\n'
-
-
-# Show installed package names
+# ============================================================
+# PYPI
+# ============================================================
 
 for dir in "$OFFLINE"/*; do
-
-
     [ -d "$dir" ] || continue
 
-
-    PACKAGE_DIR="$(basename "$dir")"
-
-
-    [ "$PACKAGE_DIR" = "pip" ] && continue
-
-
-    # --------------------------------------------------------
-    # APT PACKAGES
-    # --------------------------------------------------------
-
-    FOUND_DEB=0
-
-
-    for deb in "$dir"/*.deb; do
-
-
-        [ -f "$deb" ] || continue
-
-
-        FOUND_DEB=1
-
-
-        NAME="$(
-            clean_package_name "$deb"
-        )"
-
-
-        ok "$NAME"
-
-
-    done
-
-
-    # --------------------------------------------------------
-    # PYPI PACKAGES
-    # --------------------------------------------------------
-
-    if [ "$FOUND_DEB" -eq 0 ]; then
-
-
-        if find "$dir" \
-            -maxdepth 1 \
-            \( \
-                -name "*.whl" \
-                -o -name "*.tar.gz" \
-                -o -name "*.zip" \
-            \) |
-            grep -q .
-        then
-
-            ok "$PACKAGE_DIR"
-
-        fi
-
+    if ! find "$dir" -maxdepth 1 -type f \
+        \( -name "*.whl" -o -name "*.tar.gz" -o -name "*.zip" \) |
+        grep -q .
+    then
+        continue
     fi
 
+    NAME="$(basename "$dir")"
+    process "Installing $NAME..."
 
+    if ! python3 -m pip install \
+        --no-index \
+        --no-cache-dir \
+        --find-links "$dir" \
+        "$NAME" >/dev/null 2>&1
+    then
+        fail "$NAME installation failed."
+    fi
+
+    ok "$NAME"
+    update_progress 93
 done
 
-
 # ============================================================
-# APPLICATION FOLDERS
+# APPLICATION FILES / INSTALLERS
 # ============================================================
 
 if [ -d "$CODES" ]; then
+    process "Installing application files..."
 
-
+    shopt -s dotglob nullglob
     for item in "$CODES"/*; do
-
         [ -e "$item" ] || continue
+        NAME="$(basename "$item")"
 
-        ok "$(basename "$item")"
+        cp -a "$item" "$HOME/" >/dev/null 2>&1 ||
+            fail "Failed to copy $NAME."
 
+        ok "$NAME"
     done
+    shopt -u dotglob nullglob
+    update_progress 96
 
+    shopt -s dotglob nullglob
+    for item in "$CODES"/*; do
+        [ -d "$item" ] || continue
 
+        NAME="$(basename "$item")"
+        TARGET="$HOME/$NAME"
+        SCRIPT="$TARGET/install.sh"
+
+        [ -f "$SCRIPT" ] || continue
+
+        process "Installing $NAME..."
+
+        chmod +x "$SCRIPT" 2>/dev/null || true
+
+        if (
+            cd "$TARGET" &&
+            bash ./install.sh
+        ) >/dev/null 2>&1; then
+            ok "$NAME install success"
+        else
+            error_line "$NAME/install.sh failed"
+            printf 'Application installer failed.\n'
+            exit 1
+        fi
+
+        update_progress 99
+    done
+    shopt -u dotglob nullglob
 fi
 
+# ============================================================
+# COMPLETE
+# ============================================================
 
-printf '\n'
-printf 'Installation successful\n'
-printf '\n'
+process "Finalizing installation..."
+update_progress 100
+ok "Installation complete"
 
+printf 'Offline installation successful.\n'
 INSTALLER_EOF
-
 
 chmod +x "$INSTALLER"
 
-
-# ============================================================
-# CLEANUP
-# ============================================================
-
-rm -f "$APT_SEEN"
-
-
-# ============================================================
-# BUILDER COMPLETE
-# ============================================================
-
 echo
-echo "[6/6] Builder complete."
+echo "[9/9] Build complete."
 echo
-echo "Output:"
-echo "  $ROOT"
+echo "OFFLINE_INSTALLER:"
+echo "  $OUTPUT_DIR"
 echo
-echo "Installer:"
-echo "  $INSTALLER"
-echo
-echo "Bootstrap:"
-echo "  $BOOTSTRAP"
-echo
-echo "Offline packages:"
-echo "  $OFFLINE"
-echo
-echo "Codes:"
-echo "  $CODES"
+echo "Run:"
+echo "  cd $OUTPUT_DIR && ./installer.sh"
 echo
 echo "Done."
-echo
