@@ -28,6 +28,15 @@ set -u
 # • Keep LD_LIBRARY_PATH until package configuration finishes
 # • Unset LD_LIBRARY_PATH after all dpkg operations
 #
+# CODES / APPLICATION INSTALLER
+# ------------------------------------------------------------
+# • Copy codes/* -> $HOME
+# • Check each folder inside codes/
+# • If folder contains install.sh -> run it
+# • If folder has no install.sh -> skip it
+# • Each install.sh runs from its own folder
+# • codes/install.sh itself is not executed
+#
 # LOGIC PRESERVED
 # ------------------------------------------------------------
 # • Improved APT repository refresh
@@ -42,8 +51,6 @@ set -u
 # • Clean error UI
 # • Detailed error.log
 # • libacl bootstrap
-# • Copy codes/* -> $HOME
-# • Run copied install.sh automatically
 # • Atomic installer generation
 # • Installer syntax validation
 # • Command-line packages supported
@@ -63,7 +70,9 @@ set -u
 # ============================================================
 
 VERSION="3.28"
+
 clear
+
 # ============================================================
 # CONFIG
 # ============================================================
@@ -1248,7 +1257,9 @@ set -u
 # ============================================================
 
 VERSION="3.28"
+
 clear
+
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 OFFLINE="$ROOT/offline_packages"
@@ -1804,7 +1815,7 @@ printf "%b[OK]%b Termux packages configured\n" \
     "$RESET"
 
 # ============================================================
-# REMOVE PRIVATE LIBRARY PATH AFTER DPkg WORK IS COMPLETE
+# REMOVE PRIVATE LIBRARY PATH AFTER DPKG WORK
 # ============================================================
 
 unset LD_LIBRARY_PATH
@@ -1957,26 +1968,55 @@ if [ -d "$CODES" ]; then
         "$GREEN" \
         "$RESET"
 
-    # --------------------------------------------------------
-    # RUN INSTALL.SH
-    # --------------------------------------------------------
+    # ========================================================
+    # RUN install.sh FROM EACH CODE FOLDER
+    #
+    # Example:
+    #
+    # codes/
+    # ├── jukebox/
+    # │   └── install.sh  -> RUN
+    # │
+    # └── etc/
+    #     └── config       -> SKIP
+    #
+    # Only immediate folders inside codes/ are checked.
+    # install.sh directly inside codes/ is NOT executed.
+    # ========================================================
 
-    if [ -f "$HOME/install.sh" ]; then
+    for CODE_DIR in "$CODES"/*; do
 
-        chmod +x "$HOME/install.sh"
+        # Skip anything that is not a directory.
+        [ -d "$CODE_DIR" ] || continue
+
+        # Skip folders that do not contain install.sh.
+        [ -f "$CODE_DIR/install.sh" ] || continue
+
+        CODE_NAME="$(basename "$CODE_DIR")"
+
+        # The contents of codes/ were copied directly into HOME.
+        # Therefore codes/jukebox -> $HOME/jukebox
+        INSTALLED_CODE_DIR="$HOME/$CODE_NAME"
+
+        # Safety validation.
+        [ -d "$INSTALLED_CODE_DIR" ] || continue
+        [ -f "$INSTALLED_CODE_DIR/install.sh" ] || continue
+
+        chmod +x \
+            "$INSTALLED_CODE_DIR/install.sh"
 
         show_progress \
-            "Running install.sh"
+            "Installing $CODE_NAME"
 
         if ! (
-            cd "$HOME" &&
+            cd "$INSTALLED_CODE_DIR" &&
             bash ./install.sh
         ) >> "$ERROR_LOG" 2>&1; then
 
             fail \
-                "install.sh" \
+                "$CODE_NAME/install.sh" \
                 "Application installation" \
-                "The copied install.sh returned an error." \
+                "The install.sh inside '$CODE_NAME' returned an error." \
                 "Check install_error.log for details."
         fi
 
@@ -1984,11 +2024,12 @@ if [ -d "$CODES" ]; then
 
         clear_progress
 
-        printf "%b[OK]%b install.sh completed\n" \
+        printf "%b[OK]%b %s/install.sh completed\n" \
             "$GREEN" \
-            "$RESET"
+            "$RESET" \
+            "$CODE_NAME"
 
-    fi
+    done
 
 fi
 
