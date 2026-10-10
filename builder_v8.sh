@@ -2,7 +2,7 @@
 set -u
 
 # ============================================================
-# OFFLINE INSTALLER BUILDER v3.30
+# OFFLINE INSTALLER BUILDER v3.31
 # ============================================================
 #
 # BASE: v3.28
@@ -66,7 +66,7 @@ set -u
 #
 # ============================================================
 
-VERSION="3.30"
+VERSION="3.31"
 
 clear
 
@@ -1109,7 +1109,7 @@ set -u
 # OFFLINE INSTALLER v3.30
 # ============================================================
 
-VERSION="3.29"
+VERSION="3.31"
 
 clear
 
@@ -1131,6 +1131,18 @@ YELLOW="\033[33m"
 CYAN="\033[36m"
 
 : > "$ERROR_LOG"
+
+# Continue-on-error registry. A package is only reported [OK] when its
+# operation succeeded; recoverable package failures do not stop the run.
+FAILED_ITEMS=()
+mark_error() {
+    local item="$1" stage="$2" detail="$3"
+    FAILED_ITEMS+=("$item | $stage | $detail")
+    printf '[ERROR] %s | %s | %s\n' "$item" "$stage" "$detail" >> "$ERROR_LOG"
+}
+retry_notice() {
+    printf '%b[WARN]%b %s\n' "$YELLOW" "$RESET" "$1"
+}
 
 # ============================================================
 # EMBEDDED BUILD DATA
@@ -1580,15 +1592,10 @@ for deb in "${DEBS[@]}"; do
 done
 
 # ============================================================
-# UNPACK ALL DEBS
-#
-# IMPORTANT:
-# Do NOT use "dpkg -i" one package at a time.
-#
-# dpkg -i attempts to configure every package immediately.
-# We therefore unpack everything first and configure afterward.
+# UNPACK ALL DEBS; collect failures and retry them once after the first pass.
 # ============================================================
 
+FAILED_DEBS=()
 for deb in "${ORDERED_DEBS[@]}"; do
 
     name="$(basename "$deb")"
@@ -1601,32 +1608,30 @@ for deb in "${ORDERED_DEBS[@]}"; do
     show_progress \
         "Unpacking $pkg_name"
 
-    if ! dpkg \
-        --unpack \
-        --force-confold \
-        "$deb" \
-        >> "$ERROR_LOG" \
-        2>&1; then
-
-        fail \
-            "$pkg_name" \
-            "DEB unpack" \
-            "The package could not be unpacked." \
-            "Check install_error.log and rebuild the offline package set if the DEB is corrupted or incompatible."
+    if dpkg --unpack --force-confold "$deb" >> "$ERROR_LOG" 2>&1; then
+        progress_complete
+        show_progress "Unpacked $pkg_name"
+        clear_progress
+        printf "%b[OK]%b %s\n" "$GREEN" "$RESET" "$pkg_name"
+    else
+        FAILED_DEBS+=("$deb")
+        retry_notice "$pkg_name unpack failed; will retry after first pass."
+        printf '[RETRY QUEUED] %s | DEB unpack attempt 1\n' "$pkg_name" >> "$ERROR_LOG"
     fi
+done
 
-    progress_complete
-
-    show_progress \
-        "Unpacked $pkg_name"
-
-    clear_progress
-
-    printf "%b[OK]%b %s\n" \
-        "$GREEN" \
-        "$RESET" \
-        "$pkg_name"
-
+# Retry unpack failures once, after all other DEBs have been attempted.
+RETRY_FAILED_DEBS=()
+for deb in "${FAILED_DEBS[@]}"; do
+    pkg_name="$(dpkg-deb -f "$deb" Package 2>/dev/null || basename "$deb")"
+    show_progress "Retrying unpack $pkg_name (2/2)"
+    if dpkg --unpack --force-confold "$deb" >> "$ERROR_LOG" 2>&1; then
+        printf "%b[OK]%b %s (retry succeeded)\n" "$GREEN" "$RESET" "$pkg_name"
+    else
+        RETRY_FAILED_DEBS+=("$deb")
+        mark_error "$pkg_name" "DEB unpack retry" "Still failed after retry; skipped."
+        printf "%b[ERROR]%b %s — skipped, continuing\n" "$RED" "$RESET" "$pkg_name"
+    fi
 done
 
 # ============================================================
@@ -1672,19 +1677,9 @@ fi
 show_progress \
     "Finalizing package configuration"
 
-if ! DEBIAN_FRONTEND=noninteractive \
-    dpkg \
-    --configure \
-    --force-confold \
-    -a \
-    >> "$ERROR_LOG" \
-    2>&1; then
-
-    fail \
-        "Termux packages" \
-        "Final package configuration" \
-        "Some offline packages could not be configured." \
-        "Check install_error.log. The offline package set may be incomplete or contain incompatible package versions."
+if ! DEBIAN_FRONTEND=noninteractive dpkg --configure --force-confold -a >> "$ERROR_LOG" 2>&1; then
+    mark_error "Termux packages" "Final package configuration" "Some packages remain unconfigured; continuing with verification and remaining steps."
+    printf "%b[ERROR]%b Package configuration incomplete; continuing.\n" "$RED" "$RESET"
 fi
 
 progress_complete
@@ -1709,12 +1704,8 @@ show_progress \
     "Verifying Termux bash"
 
 if [ ! -e "$PREFIX/bin/bash" ]; then
-
-    fail \
-        "bash" \
-        "Environment verification" \
-        "Termux bash does not exist." \
-        "The offline package set is incomplete. Make sure the bash package is included."
+    mark_error "bash" "Environment verification" "Termux bash does not exist."
+    printf "%b[ERROR]%b bash is missing; continuing.\n" "$RED" "$RESET"
 fi
 
 if [ ! -x "$PREFIX/bin/bash" ]; then
@@ -1724,13 +1715,9 @@ if [ ! -x "$PREFIX/bin/bash" ]; then
         2>/dev/null || true
 fi
 
-if [ ! -x "$PREFIX/bin/bash" ]; then
-
-    fail \
-        "bash" \
-        "Environment verification" \
-        "Termux bash exists but is not executable." \
-        "Rebuild the offline installer using compatible Termux packages."
+if [ -e "$PREFIX/bin/bash" ] && [ ! -x "$PREFIX/bin/bash" ]; then
+    mark_error "bash" "Environment verification" "Termux bash is not executable."
+    printf "%b[ERROR]%b bash is not executable; continuing.\n" "$RED" "$RESET"
 fi
 
 progress_complete
@@ -1752,12 +1739,8 @@ show_progress \
     "Verifying python"
 
 if ! command -v python3 >/dev/null 2>&1; then
-
-    fail \
-        "python" \
-        "Verification" \
-        "python3 is not available after offline installation." \
-        "Verify that the Python DEB packages are included."
+    mark_error "python" "Verification" "python3 is not available after installation."
+    printf "%b[ERROR]%b python3 unavailable; continuing with remaining installer steps.\n" "$RED" "$RESET"
 fi
 
 progress_complete
@@ -1779,12 +1762,8 @@ show_progress \
     "Verifying python-pip"
 
 if ! python3 -m pip --version >/dev/null 2>&1; then
-
-    fail \
-        "python-pip" \
-        "Verification" \
-        "pip is not available after offline installation." \
-        "Verify that python-pip and its dependencies are included."
+    mark_error "python-pip" "Verification" "pip is not available after installation."
+    printf "%b[ERROR]%b pip unavailable; continuing.\n" "$RED" "$RESET"
 fi
 
 progress_complete
@@ -1803,36 +1782,27 @@ printf "%b[OK]%b python-pip\n" \
 # ============================================================
 
 if [ "${#PYPI_FILES[@]}" -gt 0 ]; then
-
-    show_progress \
-        "Installing offline PyPI packages"
-
-    if ! python3 -m pip install \
-        --no-index \
-        --no-cache-dir \
-        --find-links "$OFFLINE" \
-        "${PYPI_FILES[@]}" \
-        >> "$ERROR_LOG" \
-        2>&1; then
-
-        fail \
-            "PyPI packages" \
-            "Offline pip installation" \
-            "One or more cached Python packages could not be installed." \
-            "Verify that all required PyPI packages are present in offline_packages."
-    fi
-
-    progress_complete
-
-    show_progress \
-        "Completed PyPI packages"
-
-    clear_progress
-
-    printf "%b[OK]%b PyPI packages\n" \
-        "$GREEN" \
-        "$RESET"
-
+    for pyfile in "${PYPI_FILES[@]}"; do
+        pyname="$(basename "$pyfile")"
+        py_ok=0
+        for attempt in 1 2; do
+            show_progress "Installing $pyname (attempt $attempt/2)"
+            if command -v python3 >/dev/null 2>&1 && python3 -m pip install --no-index --no-cache-dir --find-links "$OFFLINE" "$pyfile" >> "$ERROR_LOG" 2>&1; then
+                py_ok=1
+                break
+            fi
+            retry_notice "$pyname install attempt $attempt failed."
+        done
+        if [ "$py_ok" -eq 1 ]; then
+            progress_complete
+            clear_progress
+            printf "%b[OK]%b %s\n" "$GREEN" "$RESET" "$pyname"
+        else
+            mark_error "$pyname" "Offline pip installation" "Failed after 2 attempts; skipped."
+            clear_progress
+            printf "%b[ERROR]%b %s — skipped, continuing\n" "$RED" "$RESET" "$pyname"
+        fi
+    done
 fi
 
 # ============================================================
@@ -1916,26 +1886,23 @@ if [ -d "$CODES" ]; then
         show_progress \
             "Installing $CODE_NAME"
 
-        if ! (
-            cd "$INSTALLED_CODE_DIR" &&
-            bash ./install.sh
-        ) >> "$ERROR_LOG" 2>&1; then
-
-            fail \
-                "$CODE_NAME/install.sh" \
-                "Application installation" \
-                "The install.sh inside '$CODE_NAME' returned an error." \
-                "Check install_error.log for details."
-        fi
-
-        progress_complete
+        code_ok=0
+        for attempt in 1 2; do
+            if (cd "$INSTALLED_CODE_DIR" && bash ./install.sh) >> "$ERROR_LOG" 2>&1; then
+                code_ok=1
+                break
+            fi
+            retry_notice "$CODE_NAME install.sh attempt $attempt failed."
+        done
 
         clear_progress
-
-        printf "%b[OK]%b %s/install.sh completed\n" \
-            "$GREEN" \
-            "$RESET" \
-            "$CODE_NAME"
+        if [ "$code_ok" -eq 1 ]; then
+            progress_complete
+            printf "%b[OK]%b %s/install.sh completed\n" "$GREEN" "$RESET" "$CODE_NAME"
+        else
+            mark_error "$CODE_NAME/install.sh" "Application installation" "Failed after 2 attempts; continuing to next application."
+            printf "%b[ERROR]%b %s/install.sh — skipped, continuing\n" "$RED" "$RESET" "$CODE_NAME"
+        fi
 
     done
 
@@ -1972,10 +1939,21 @@ python3 -m pip --version 2>/dev/null || true
 
 echo
 
-printf "Error log : %s\n" \
-    "$ERROR_LOG"
-
+printf "Error log : %s\n" "$ERROR_LOG"
 echo
+if [ "${#FAILED_ITEMS[@]}" -gt 0 ]; then
+    printf "%bINSTALLATION FINISHED WITH ERRORS%b\n" "$RED$BOLD" "$RESET"
+    printf "Failed operations: %d\n\n" "${#FAILED_ITEMS[@]}"
+    for failed in "${FAILED_ITEMS[@]}"; do
+        printf "%b[ERROR]%b %s\n" "$RED" "$RESET" "$failed"
+    done
+    echo
+    printf "Full details: %s\n" "$ERROR_LOG"
+    echo
+else
+    printf "%bALL INSTALLATION STEPS COMPLETED WITHOUT RECORDED ERRORS%b\n" "$GREEN$BOLD" "$RESET"
+    echo
+fi
 
 exit 0
 
